@@ -1,0 +1,19 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f3f5f8;
+  --card: #ffffff;
+  --accent: #b24a21;
+  --ink: #152033;
+}
+
+body {
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.card {
+  @apply rounded-2xl border border-slate-200/80 bg-white shadow-sm;
+}

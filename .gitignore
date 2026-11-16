@@ -1,0 +1,12 @@
+node_modules
+.next
+.env
+.env.local
+.env*.local
+data/certs/**
+!data/certs/.gitkeep
+data/caf/**
+!data/caf/.gitkeep
+*.p12
+*.pfx
+data/seed-api.json
