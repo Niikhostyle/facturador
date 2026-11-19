@@ -10,3 +10,13 @@ data/caf/**
 *.p12
 *.pfx
 data/seed-api.json
+
+# Datos de operación (DTE emitidos, cotizaciones, logos): no versionar
+data/emitidos/
+data/cotizaciones/
+data/logo.*
+data/logos/
+tsconfig.tsbuildinfo
+
+# Scripts locales de prueba contra el SII (contienen RUT y datos reales)
+scripts/

@@ -36,13 +36,24 @@ export async function api<T = unknown>(
   if (auth?.token) headers.set("Authorization", `Bearer ${auth.token}`);
   if (auth?.tenantId) headers.set("X-Tenant-Id", String(auth.tenantId));
 
-  const res = await fetch(`/api/v1${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`/api/v1${path}`, { ...init, headers });
+  } catch {
+    throw new Error(
+      "No se pudo conectar con el servidor (fetch failed). Revisa tu conexión o recarga e intenta de nuevo.",
+    );
+  }
   const text = await res.text();
   let body: unknown = text;
   try {
     body = text ? JSON.parse(text) : null;
   } catch {
     /* keep text */
+  }
+  if (res.status === 401) {
+    clearAuth();
+    window.location.replace("/login");
   }
   if (!res.ok) {
     const msg =

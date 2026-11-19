@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Save, Star, Trash2 } from "lucide-react";
+import { Save, Star, Trash2, ExternalLink } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/lib/api";
+import { api, getAuth } from "@/lib/api";
 
 type Giro = { codigo: string; glosa: string; principal?: boolean };
 type Empresa = {
@@ -19,6 +19,7 @@ type Empresa = {
   email: string;
   unidad_sii: string;
   usar_logo: boolean;
+  has_logo?: boolean;
   formato_impresion: string | null;
   volumen_estimado: string | null;
   giros: Giro[];
@@ -43,9 +44,39 @@ export default function EmpresaPage() {
   const [form, setForm] = useState<Empresa | null>(null);
   const [saved, setSaved] = useState("");
   const [loading, setLoading] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoMsg, setLogoMsg] = useState("");
+
+  async function loadLogoPreview(hasLogo: boolean) {
+    if (!hasLogo) {
+      setLogoPreview(null);
+      return;
+    }
+    try {
+      const auth = getAuth();
+      const res = await fetch("/api/v1/empresa/logo", {
+        headers: {
+          ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+          ...(auth?.tenantId ? { "X-Tenant-Id": String(auth.tenantId) } : {}),
+        },
+      });
+      if (!res.ok) {
+        setLogoPreview(null);
+        return;
+      }
+      const blob = await res.blob();
+      setLogoPreview((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
+    } catch {
+      setLogoPreview(null);
+    }
+  }
 
   useEffect(() => {
-    api<Empresa>("/empresa").then((e) =>
+    api<Empresa>("/empresa").then((e) => {
       setForm({
         ...e,
         nombre_fantasia: e.nombre_fantasia || "",
@@ -54,11 +85,68 @@ export default function EmpresaPage() {
         giros: e.giros || [],
         documentos_emitir: e.documentos_emitir || [],
         usar_logo: Boolean(e.usar_logo),
+        has_logo: Boolean(e.has_logo),
         formato_impresion: e.formato_impresion ?? "",
         volumen_estimado: e.volumen_estimado ?? "",
-      }),
-    );
+      });
+      loadLogoPreview(Boolean(e.has_logo));
+    });
   }, []);
+
+  async function onLogoFile(file: File | null) {
+    if (!file || !form) return;
+    setLogoBusy(true);
+    setLogoMsg("");
+    try {
+      if (!file.type.startsWith("image/")) throw new Error("Selecciona una imagen (PNG, JPG o WebP).");
+      if (file.size > 2.5 * 1024 * 1024) throw new Error("El logo no puede superar 2,5 MB.");
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+        reader.readAsDataURL(file);
+      });
+      const res = await api<{ ok: boolean; message?: string; usar_logo?: boolean; has_logo?: boolean }>(
+        "/empresa/logo",
+        {
+          method: "POST",
+          body: JSON.stringify({ image_base64: dataUrl, mime: file.type }),
+        },
+      );
+      setForm((prev) =>
+        prev ? { ...prev, usar_logo: res.usar_logo !== false, has_logo: true } : prev,
+      );
+      setLogoPreview((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return dataUrl;
+      });
+      setLogoMsg(res.message || "Logo guardado.");
+      setSaved("Logo actualizado. Guarda el resto de datos si cambiaste algo más.");
+    } catch (e) {
+      setLogoMsg(e instanceof Error ? e.message : "No se pudo subir el logo");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function onDeleteLogo() {
+    if (!form) return;
+    setLogoBusy(true);
+    setLogoMsg("");
+    try {
+      await api("/empresa/logo", { method: "DELETE" });
+      setForm((prev) => (prev ? { ...prev, usar_logo: false, has_logo: false } : prev));
+      setLogoPreview((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setLogoMsg("Logo eliminado.");
+    } catch (e) {
+      setLogoMsg(e instanceof Error ? e.message : "No se pudo eliminar");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
 
   function set<K extends keyof Empresa>(key: K, value: Empresa[K]) {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -78,6 +166,9 @@ export default function EmpresaPage() {
     const others = form.giros.filter((g) => g.codigo !== form.acteco);
     set("giros", [{ codigo: form.acteco, glosa: form.giro, principal: true }, ...others]);
   }
+
+  // RUT de la empresa para abrir la consulta en el SII.
+  const rutConsulta = form?.rut_formateado || "";
 
   async function onSave(e?: FormEvent) {
     e?.preventDefault();
@@ -178,6 +269,33 @@ export default function EmpresaPage() {
               </label>
             </div>
 
+            {/* Consultar situación tributaria en el SII (el SII exige reCAPTCHA: se abre en su sitio) */}
+            <div className="mt-5 rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">Consultar situación tributaria en el SII</p>
+                  <p className="text-xs text-slate-500">
+                    El SII protege la consulta con reCAPTCHA, por eso se abre en su sitio. Copia la
+                    razón social, el giro principal y el acteco a los campos de arriba.
+                  </p>
+                </div>
+                <a
+                  href="https://www2.sii.cl/stc/noauthz"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Consultar en el SII
+                </a>
+              </div>
+              {rutConsulta && (
+                <p className="mt-2 text-xs text-slate-500">
+                  RUT a consultar: <span className="font-medium text-slate-700">{rutConsulta}</span>
+                </p>
+              )}
+            </div>
+
             <div className="mt-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-slate-700">Giros de la empresa</p>
@@ -261,13 +379,62 @@ export default function EmpresaPage() {
 
           <section className="card p-5">
             <h2 className="font-display text-base font-semibold text-ink-900">Logo (opcional)</h2>
-            <p className="mt-1 text-sm text-slate-500">Se puede usar en documentos carta.</p>
-            <input type="file" accept="image/*" className="mt-3 block w-full text-sm" />
+            <p className="mt-1 text-sm text-slate-500">
+              Aparece en facturas PDF y cotizaciones. PNG, JPG o WebP · máx. 2,5 MB.
+            </p>
+
+            {logoPreview ? (
+              <div className="mt-4 flex flex-wrap items-center gap-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={logoPreview}
+                  alt="Logo de la empresa"
+                  className="h-16 max-w-[200px] rounded-lg border border-slate-200 bg-white object-contain p-2"
+                />
+                <button
+                  type="button"
+                  onClick={onDeleteLogo}
+                  disabled={logoBusy}
+                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-60"
+                >
+                  Quitar logo
+                </button>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">Aún no hay logo cargado.</p>
+            )}
+
+            <label className="mt-4 block text-sm">
+              <span className="font-medium text-slate-700">
+                {form.has_logo ? "Reemplazar logo" : "Seleccionar logo"}
+              </span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/*"
+                className="mt-1.5 block w-full text-sm"
+                disabled={logoBusy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  onLogoFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {logoBusy ? <p className="mt-2 text-sm text-slate-500">Subiendo…</p> : null}
+            {logoMsg ? (
+              <p
+                className={`mt-2 text-sm ${logoMsg.includes("No se") || logoMsg.includes("supera") || logoMsg.includes("Formato") ? "text-red-600" : "text-emerald-700"}`}
+              >
+                {logoMsg}
+              </p>
+            ) : null}
+
             <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={form.usar_logo}
                 onChange={(e) => set("usar_logo", e.target.checked)}
+                disabled={!form.has_logo && !logoPreview}
               />
               Usar el logo en los documentos (carta)
             </label>

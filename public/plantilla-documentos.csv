@@ -1,0 +1,39 @@
+﻿id_documento;tipo_dte;fecha_emision;rut_receptor;razon_social_receptor;giro_receptor;direccion_receptor;comuna_receptor;ciudad_receptor;email_receptor;forma_pago;fecha_vencimiento;item_nombre;item_cantidad;item_unidad;item_precio;item_exento;referencia_tipo;referencia_folio;referencia_fecha;referencia_codigo;referencia_razon;monto_total;observaciones
+# VENTA-1;33;;76354771-K;COMERCIAL EJEMPLO SPA;Venta al por menor;Av. Providencia 1234;Providencia;Santiago;;1;;Servicio de mantención mensual;1;UN;120000;no;;;;;;;
+# VENTA-2;33;;77111222-6;DISTRIBUIDORA DEL SUR LIMITADA;Distribución;Camino Real 500;Puerto Montt;Puerto Montt;;;;Caja de repuestos;3;UN;45000;no;;;;;;;
+# VENTA-2;;;;;;;;;;;;Flete;1;;15000;no;;;;;;;
+
+# QUÉ VA EN CADA COLUMNA
+
+# id_documento;Tu identificador del documento. Todas las filas con el mismo valor forman un solo documento, una fila por cada línea de detalle. Obligatorio.
+# tipo_dte;Tipo de documento: 33 factura, 34 factura exenta, 56 nota de débito, 61 nota de crédito. Obligatorio, en la primera fila del documento.
+# fecha_emision;Fecha de emisión en formato AAAA-MM-DD. No puede ser futura. Si la dejas en blanco se usa el día de hoy.
+# rut_receptor;RUT de tu cliente, con o sin puntos y con guion: 76.354.771-K o 76354771-K. Obligatorio.
+# razon_social_receptor;Razón social de tu cliente, hasta 100 caracteres.
+# giro_receptor;Giro de tu cliente, hasta 40 caracteres.
+# direccion_receptor;Dirección de tu cliente, hasta 70 caracteres.
+# comuna_receptor;Comuna de tu cliente, hasta 20 caracteres.
+# ciudad_receptor;Ciudad de tu cliente, hasta 20 caracteres.
+# email_receptor;Correo al que se le avisa a tu cliente. Opcional, hasta 80 caracteres.
+# forma_pago;Forma de pago: 1 contado, 2 crédito, 3 sin costo. Opcional.
+# fecha_vencimiento;Fecha de vencimiento en formato AAAA-MM-DD. Si la forma de pago es crédito (2), se informa como fecha de pago. Opcional.
+# item_nombre;Qué vendiste. Obligatorio: una fila sin ítem no es una línea de detalle.
+# item_cantidad;Cuántas unidades. Admite decimales (usa punto o coma). Si la dejas en blanco se toma 1.
+# item_unidad;Unidad de medida, hasta 4 caracteres: UN, KG, HR, UF. Opcional.
+# item_precio;IMPORTANTE: precio unitario NETO, sin IVA. El IVA lo calculamos nosotros. Obligatorio.
+# item_exento;Escribe «si» cuando esa línea no paga IVA. En blanco o «no» significa afecta.
+# referencia_tipo;Para una nota de crédito o de débito: el tipo del documento que corrige (33, 34, 56, 61). Se lee de la primera fila del documento.
+# referencia_folio;El folio del documento que la nota corrige.
+# referencia_fecha;La fecha de emisión del documento que la nota corrige, en formato AAAA-MM-DD.
+# referencia_codigo;Qué le hace la nota al documento: 1 lo anula, 2 corrige su texto, 3 corrige sus montos. Si lo dejas en blanco lo deducimos.
+# referencia_razon;El motivo, hasta 90 caracteres. Opcional.
+# monto_total;El total del documento, si quieres que lo comprobemos contra lo que suman tus ítems. Opcional: se admite una diferencia de hasta $1 por el redondeo. Se lee de la primera fila del documento.
+# observaciones;Nota interna tuya. No viaja al SII ni sale en el documento.
+
+# Una fila es una LÍNEA de detalle. Un documento con varias líneas son varias filas con el mismo id_documento.
+# Los datos de cabecera (tipo, fecha, receptor, referencia) se leen de la PRIMERA fila de cada documento.
+# El precio del ítem va NETO, sin IVA. Si pones precios con IVA, el documento sale más caro de lo que cobraste.
+# Subir el archivo NO emite nada: primero te decimos fila por fila qué está mal, y recién después, si tú lo pides, se emite.
+# Tipos que admite la planilla: 33, 34, 56 y 61. Boletas (39, 41) y guías de despacho (52) se emiten desde «Nuevo DTE» o por la API.
+# Guarda el archivo como CSV: en Excel, Archivo → Guardar como → «CSV (delimitado por comas)». El separador puede ser ; o ,.
+# Las filas que empiezan con # son ejemplos y ayuda: no se leen. Escribe tus datos en filas sin el #.

@@ -18,9 +18,9 @@ export const TENANT: Tenant = {
   razon_social: "GRUPO DESARROLLO TECNOLOGICO DEVSUR SPA",
   rut_formateado: "78.533.567-8",
   ambiente: "certificacion",
-  plan: "gratis",
-  max_dte_mes: 50,
-  features: ["dte", "recibidos", "api"],
+  plan: "empresa",
+  max_dte_mes: 0,
+  features: ["dte", "recibidos", "programadas", "carga_masiva", "api", "contable"],
   email: "nfigueroa@gdtdevsur.cl",
   telefono: "",
   direccion: "",
@@ -101,9 +101,30 @@ export const SUSCRIPCION = {
 };
 
 export const PLANES = [
-  { slug: "free", nombre: "Gratis", precio: 0, dte_mes: 50, descripcion: "Prueba el portal y la API." },
-  { slug: "pyme", nombre: "Profesional", precio: 29990, dte_mes: 100, descripcion: "Certificación SII, folios y emisión continua." },
-  { slug: "empresa", nombre: "Empresa", precio: 79990, dte_mes: 500, descripcion: "Volumen, API y módulos contables." },
+  {
+    slug: "free",
+    nombre: "Gratis",
+    precio: 0,
+    dte_mes: 50,
+    descripcion: "Prueba el portal sin compromiso.",
+    features: ["dte"],
+  },
+  {
+    slug: "pyme",
+    nombre: "Profesional",
+    precio: 29990,
+    dte_mes: 3000,
+    descripcion: "Certificación SII, recibidos, programadas y carga masiva.",
+    features: ["dte", "recibidos", "programadas", "carga_masiva"],
+  },
+  {
+    slug: "empresa",
+    nombre: "Empresa",
+    precio: 49990,
+    dte_mes: 0,
+    descripcion: "DTE ilimitados, API, contable y todos los módulos.",
+    features: ["dte", "recibidos", "programadas", "carga_masiva", "api", "contable"],
+  },
 ];
 
 export const MODULOS = [

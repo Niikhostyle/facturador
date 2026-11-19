@@ -1,6 +1,6 @@
-import fs from "fs";
-import forge from "node-forge";
 import { getSiiConfig, siiReadiness } from "./config";
+import { loadP12FromPath } from "./cert";
+import { firmarDocumentoEnvolvente } from "./sign";
 
 function soapEnvelope(bodyInner: string) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -12,99 +12,64 @@ function soapEnvelope(bodyInner: string) {
 </soapenv:Envelope>`;
 }
 
+/** Extrae el contenido de un tag, tolerando prefijo de namespace (ns1:, SII:, etc.). */
 function extractTag(xml: string, tag: string) {
-  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i");
+  const re = new RegExp(`<(?:[\\w]+:)?${tag}\\b[^>]*>([\\s\\S]*?)</(?:[\\w]+:)?${tag}>`, "i");
   const m = xml.match(re);
   return m?.[1]?.trim() || null;
 }
 
+function unescapeXml(s: string) {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function postSoap(url: string, bodyInner: string) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      SOAPAction: '""',
-    },
-    body: soapEnvelope(bodyInner),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`SII HTTP ${res.status}: ${text.slice(0, 300)}`);
+  // El SII (maullin) devuelve 503 intermitentes: reintentamos los errores 5xx.
+  let last = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: '""', "User-Agent": "Mozilla/5.0" },
+        body: soapEnvelope(bodyInner),
+      });
+      const text = await res.text();
+      if (res.ok) return text;
+      last = `SII HTTP ${res.status}`;
+      if (res.status < 500) throw new Error(`${last}: ${text.slice(0, 200)}`);
+    } catch (e) {
+      last = e instanceof Error ? e.message : String(e);
+      if (last.startsWith("SII HTTP") && !last.includes("5")) throw e;
+    }
+    await sleep(1200 * (attempt + 1));
   }
-  return text;
+  throw new Error(`${last} (SII no disponible tras reintentos; es intermitente, vuelve a intentar).`);
 }
 
 /** Obtiene semilla CrSeed del SII (no requiere certificado). */
 export async function getSeed() {
   const cfg = getSiiConfig();
   const xml = await postSoap(cfg.endpoints.seed, "<dte:getSeed/>");
-  const seed = extractTag(xml, "SEMILLA") || extractTag(xml, "SII:SEMILLA");
-  if (!seed) {
-    // a veces viene escapado dentro de getSeedReturn
-    const ret = extractTag(xml, "getSeedReturn");
-    const unescaped = ret?.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"') || "";
-    const seed2 = extractTag(unescaped, "SEMILLA");
-    if (!seed2) throw new Error("No se pudo leer SEMILLA del SII");
-    return { seed: seed2, raw: xml };
-  }
+  // La semilla viene dentro de <...:getSeedReturn> con el XML interno escapado.
+  const ret = extractTag(xml, "getSeedReturn");
+  const inner = ret ? unescapeXml(ret) : xml;
+  const seed = extractTag(inner, "SEMILLA");
+  if (!seed) throw new Error(`No se pudo leer SEMILLA del SII. Resp: ${xml.slice(0, 200)}`);
   return { seed, raw: xml };
 }
 
-function loadP12(certPath: string, password: string) {
-  const der = fs.readFileSync(certPath);
-  const asn1 = forge.asn1.fromDer(der.toString("binary"));
-  const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, password);
-
-  const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[
-    forge.pki.oids.pkcs8ShroudedKeyBag
-  ];
-  const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag];
-  const key = keyBags?.[0]?.key;
-  const cert = certBags?.[0]?.cert;
-  if (!key || !cert) throw new Error("No se pudo leer clave/certificado del .p12 (¿clave incorrecta?)");
-  return { key, cert };
-}
-
+/** Firma la semilla (documento getToken) con XML-DSig envolvente (xml-crypto). */
 function signSeedXml(seed: string, certPath: string, password: string) {
-  const { key, cert } = loadP12(certPath, password);
+  const cert = loadP12FromPath(certPath, password);
   const seedXml = `<getToken><item><Semilla>${seed}</Semilla></item></getToken>`;
-
-  // Firma XMLDSig enveloping simplificada compatible con GetTokenFromSeed
-  const signedInfo =
-    `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">` +
-    `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
-    `<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>` +
-    `<Reference URI="">` +
-    `<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>` +
-    `<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>` +
-    `<DigestValue></DigestValue>` +
-    `</Reference></SignedInfo>`;
-
-  // Digest del documento a firmar (seedXml)
-  const md = forge.md.sha1.create();
-  md.update(seedXml, "utf8");
-  const digestValue = forge.util.encode64(md.digest().getBytes());
-
-  const signedInfoFilled = signedInfo.replace(
-    "<DigestValue></DigestValue>",
-    `<DigestValue>${digestValue}</DigestValue>`,
-  );
-
-  const md2 = forge.md.sha1.create();
-  md2.update(signedInfoFilled, "utf8");
-  const signature = forge.util.encode64(key.sign(md2));
-  const certB64 = forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes());
-
-  return (
-    seedXml.replace(
-      "</getToken>",
-      `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` +
-        signedInfoFilled +
-        `<SignatureValue>${signature}</SignatureValue>` +
-        `<KeyInfo><X509Data><X509Certificate>${certB64}</X509Certificate></X509Data></KeyInfo>` +
-        `</Signature></getToken>`,
-    )
-  );
+  return firmarDocumentoEnvolvente(seedXml, cert);
 }
 
 /** Solicita token SII firmando la semilla con el .p12. */
@@ -130,13 +95,13 @@ export async function getToken() {
     `<dte:getToken><pszXml>${escaped}</pszXml></dte:getToken>`,
   );
 
-  let token = extractTag(xml, "TOKEN");
+  const ret = extractTag(xml, "getTokenReturn");
+  const inner = ret ? unescapeXml(ret) : xml;
+  const token = extractTag(inner, "TOKEN");
   if (!token) {
-    const ret = extractTag(xml, "getTokenReturn");
-    const unescaped = ret?.replace(/&lt;/g, "<").replace(/&gt;/g, ">") || "";
-    token = extractTag(unescaped, "TOKEN");
+    const glosa = extractTag(inner, "GLOSA") || extractTag(inner, "ESTADO");
+    throw new Error(`SII no devolvió TOKEN${glosa ? " (" + glosa + ")" : ""}. Resp: ${inner.slice(0, 300)}`);
   }
-  if (!token) throw new Error(`SII no devolvió TOKEN. Respuesta: ${xml.slice(0, 400)}`);
 
   return {
     token,
@@ -173,7 +138,7 @@ export async function probeSii() {
   } else if (!cfg.enabled) {
     result.token = {
       ok: false,
-      error: "SII_ENABLED=false. Actívalo cuando entregues el .p12 y la clave.",
+      error: "Envío al SII deshabilitado. Actívalo en /sii o con SII_ENABLED=true.",
     };
   } else {
     result.token = {

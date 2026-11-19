@@ -1,26 +1,29 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Sora } from "next/font/google";
+import { IBM_Plex_Sans, Bricolage_Grotesque } from "next/font/google";
+import { PointerLight } from "@/components/motion/PointerLight";
 import "./globals.css";
 
-const plusJakarta = Plus_Jakarta_Sans({
+const ibmPlex = IBM_Plex_Sans({
   subsets: ["latin"],
-  variable: "--font-plus-jakarta",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ibm-plex",
 });
 
-const sora = Sora({
+const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
-  variable: "--font-sora",
+  variable: "--font-bricolage",
 });
 
 export const metadata: Metadata = {
   title: "Facturador GDT DevSur",
-  description: "Facturación electrónica local — GDT DevSur",
+  description: "Facturación electrónica — GDT DevSur",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
-      <body className={`${plusJakarta.variable} ${sora.variable} font-sans antialiased`}>
+    <html lang="es-CL">
+      <body className={`${ibmPlex.variable} ${bricolage.variable} font-sans antialiased`}>
+        <PointerLight />
         {children}
       </body>
     </html>
