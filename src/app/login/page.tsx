@@ -90,7 +90,7 @@ export default function LoginPage() {
                 placeholder="admin@empresa.cl"
                 type="email"
                 name="email"
-                autoComplete="username"
+                autoComplete="email"
                 required
               />
             </div>
@@ -111,7 +111,7 @@ export default function LoginPage() {
                 />
                 <button
                   type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition hover:text-slate-600"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-500 transition hover:text-slate-700"
                   onClick={() => setShow((v) => !v)}
                   aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
                   aria-pressed={show}

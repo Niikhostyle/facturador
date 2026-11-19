@@ -104,11 +104,11 @@ export default function CargaMasivaPage() {
 
   useEffect(() => {
     let cancel = false;
-    Promise.all([api<{ progreso_pct?: number }>("/onboarding/estado"), api<SiiConfig>("/sii/config"), cargarFolios()])
+    Promise.all([api<{ progreso_pct?: number; ambiente?: string }>("/onboarding/estado"), api<SiiConfig>("/sii/config"), cargarFolios()])
       .then(([onb, cfg]) => {
         if (cancel) return;
         setAmbiente(cfg.data.ambiente === "produccion" ? "produccion" : "certificacion");
-        setGate(Number(onb.progreso_pct ?? 0) >= 100 ? "ok" : "blocked");
+        setGate((onb.ambiente === "certificacion" || Number(onb.progreso_pct ?? 0) >= 100) ? "ok" : "blocked");
       })
       .catch(() => {
         if (!cancel) setGate("ok");

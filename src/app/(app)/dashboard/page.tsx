@@ -202,6 +202,7 @@ export default function DashboardPage() {
                 <p
                   className="shrink-0 font-display text-3xl font-semibold tabular-nums text-[var(--pulso)]"
                   role="progressbar"
+                  aria-label="Avance de la habilitación"
                   aria-valuenow={onboarding?.progreso_pct ?? 0}
                   aria-valuemin={0}
                   aria-valuemax={100}

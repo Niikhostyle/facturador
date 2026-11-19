@@ -104,7 +104,7 @@ function NuevoDteForm() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      api<{ progreso_pct?: number }>("/onboarding/estado"),
+      api<{ progreso_pct?: number; ambiente?: string }>("/onboarding/estado"),
       api<{ data: Cliente[] }>("/clientes?per_page=100"),
       api<{ data: Producto[] }>("/productos?per_page=100"),
       api<CafEstado>("/caf/estado"),
@@ -126,7 +126,7 @@ function NuevoDteForm() {
     ])
       .then(([onb, c, p, cafRes, cotRes]) => {
         if (cancelled) return;
-        const operativa = Number(onb.progreso_pct ?? 0) >= 100;
+        const operativa = (onb.ambiente === "certificacion" || Number(onb.progreso_pct ?? 0) >= 100);
         setGate(operativa ? "ok" : "blocked");
         setClientes(c.data || []);
         setProductos(p.data || []);

@@ -593,7 +593,7 @@ export default function ClientesPage() {
                   className={input}
                   value={form.direccion}
                   onChange={(e) => setForm((f) => ({ ...f, direccion: e.target.value }))}
-                  autoComplete="street-address"
+                  autoComplete="address-line1"
                   required
                 />
               </Campo>

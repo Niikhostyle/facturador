@@ -19,4 +19,5 @@ data/logos/
 tsconfig.tsbuildinfo
 
 # Scripts locales de prueba contra el SII (contienen RUT y datos reales)
-scripts/
+scripts/*
+!scripts/import-nomina-sii.ts

@@ -63,7 +63,7 @@ function validezMeta(c: Cotizacion) {
   const vence = addDays(c.fecha, c.validez_dias);
   const left = daysUntil(vence);
   const closed = c.estado === "aceptada" || c.estado === "rechazada" || c.estado === "anulada";
-  if (closed) return { vence, left, label: "—", tone: "text-slate-400" };
+  if (closed) return { vence, left, label: "—", tone: "text-slate-500" };
   if (left < 0) return { vence, left, label: "Vencida", tone: "text-[var(--danger)] font-semibold" };
   if (left <= 7) return { vence, left, label: `${left}d`, tone: "text-[var(--warn)] font-semibold" };
   return { vence, left, label: `${left}d`, tone: "text-slate-600" };
@@ -345,7 +345,7 @@ export default function CotizacionesPage() {
                           <td className="px-4 py-3 text-slate-600">{formatFecha(c.fecha)}</td>
                           <td className="px-4 py-3">
                             <p className={cn("tabular-nums", v.tone)}>{v.label}</p>
-                            <p className="text-xs text-slate-400">{formatFecha(v.vence)}</p>
+                            <p className="text-xs text-slate-500">{formatFecha(v.vence)}</p>
                           </td>
                           <td className="px-4 py-3 text-right font-semibold tabular-nums">
                             {formatCLP(c.total)}

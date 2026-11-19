@@ -112,7 +112,7 @@ export default function RegistroPage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="font-display text-2xl font-bold text-slate-900">Crea tu cuenta</h2>
-              <p className="mt-1 text-sm text-slate-500">Empresa independiente + usuario dueño.</p>
+              <p className="mt-1 text-sm text-slate-500">Empresa independiente + usuario dueño. Todos los campos son obligatorios salvo los marcados (opcional).</p>
             </div>
             <Link href="/login" className="text-sm font-medium text-brand-700 hover:underline">
               Iniciar sesión
@@ -120,7 +120,7 @@ export default function RegistroPage() {
           </div>
 
           {error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
           ) : null}
 
           <fieldset className="space-y-3">
@@ -131,6 +131,7 @@ export default function RegistroPage() {
                 <input
                   className="w-full rounded-lg border border-slate-300 px-3 py-2"
                   value={form.rut}
+                  inputMode="numeric"
                   onChange={(e) => set("rut", e.target.value.replace(/\D/g, ""))}
                   required
                 />
@@ -151,6 +152,7 @@ export default function RegistroPage() {
               <input
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Como aparece en el SII"
+                autoComplete="organization"
                 value={form.razon_social}
                 onChange={(e) => set("razon_social", e.target.value)}
                 required
@@ -164,6 +166,7 @@ export default function RegistroPage() {
               <span className="mb-1 block text-slate-600">Tu nombre</span>
               <input
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                autoComplete="name"
                 value={form.name}
                 onChange={(e) => set("name", e.target.value)}
                 required
@@ -174,6 +177,7 @@ export default function RegistroPage() {
               <input
                 type="email"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                autoComplete="email"
                 value={form.email}
                 onChange={(e) => set("email", e.target.value)}
                 required
@@ -186,14 +190,17 @@ export default function RegistroPage() {
                   type={showPass ? "text" : "password"}
                   minLength={8}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10"
+                  autoComplete="new-password"
                   value={form.password}
                   onChange={(e) => set("password", e.target.value)}
                   required
                 />
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500"
                   onClick={() => setShowPass((v) => !v)}
+                  aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  aria-pressed={showPass}
                 >
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -202,11 +209,14 @@ export default function RegistroPage() {
           </fieldset>
 
           <label className="block text-sm">
-            <span className="mb-1 block font-semibold text-slate-800">Correo de contacto</span>
+            <span className="mb-1 block font-semibold text-slate-800">
+              Correo de contacto <span className="font-normal text-slate-500">(opcional)</span>
+            </span>
             <input
               type="email"
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="Facturación y avisos (opcional)"
+              placeholder="Facturación y avisos"
+              autoComplete="email"
               value={form.email_contacto}
               onChange={(e) => set("email_contacto", e.target.value)}
             />

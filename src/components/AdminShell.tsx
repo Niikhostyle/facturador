@@ -44,12 +44,18 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="min-h-screen bg-[var(--bg)] lg:grid lg:grid-cols-[240px_1fr]">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-fiscal"
+      >
+        Saltar al contenido
+      </a>
       <aside className="border-b border-[var(--line)] bg-fiscal-deep text-white lg:min-h-screen lg:border-b-0 lg:border-r">
         <div className="px-5 py-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-white/50">Plataforma</p>
           <p className="mt-1 font-display text-lg font-bold">Admin GDT</p>
         </div>
-        <nav className="space-y-1 px-3 pb-4">
+        <nav aria-label="Administración" className="space-y-1 px-3 pb-4">
           {NAV.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
             const Icon = item.icon;
@@ -57,6 +63,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition",
                   active ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white",
@@ -85,7 +92,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           </button>
         </div>
       </aside>
-      <main className="min-w-0 p-5 sm:p-8">{children}</main>
+      <main id="main" tabIndex={-1} className="min-w-0 p-5 outline-none sm:p-8">{children}</main>
     </div>
   );
 }

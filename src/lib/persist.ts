@@ -11,7 +11,7 @@ const g = globalThis as typeof globalThis & {
   __facturadorLoaded?: Promise<void>;
 };
 
-function pool(): mysql.Pool {
+export function pool(): mysql.Pool {
   if (!g.__facturadorPool) {
     const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SOCKET } = process.env;
     if (!DB_USER || !DB_NAME) throw new Error("Base de datos no configurada (DB_USER / DB_NAME).");
