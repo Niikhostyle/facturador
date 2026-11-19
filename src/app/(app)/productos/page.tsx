@@ -148,10 +148,10 @@ export default function ProductosPage() {
     requestAnimationFrame(() => nombreRef.current?.focus());
   }
 
-  // Atajo N para "Nuevo producto", salvo que se esté escribiendo o haya un diálogo abierto.
+  // Atajo Alt+Shift+P (2.1.4: nada de atajos de una tecla) para "Nuevo producto", salvo que se esté escribiendo o haya un diálogo abierto.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key.toLowerCase() !== "n" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code !== "KeyP" || !e.altKey || !e.shiftKey || e.metaKey || e.ctrlKey) return;
       const t = e.target as HTMLElement | null;
       if (t?.closest("input, textarea, select, [contenteditable='true']") || document.querySelector("dialog[open]")) return;
       e.preventDefault();
@@ -244,14 +244,14 @@ export default function ProductosPage() {
           <button
             type="button"
             onClick={() => abrirForm(null)}
-            aria-keyshortcuts="N"
-            title="Nuevo producto (N)"
+            aria-keyshortcuts="Alt+Shift+P"
+            title="Nuevo producto (Alt+Shift+P)"
             className={cn(btnPrimary, "sm:pr-2.5")}
           >
             <Plus className="h-4 w-4" aria-hidden />
             Nuevo producto
-            <kbd className="hidden h-5 min-w-5 items-center justify-center rounded-[5px] bg-white/15 px-1 font-sans text-[11px] font-semibold leading-none text-white/85 sm:inline-flex">
-              N
+            <kbd className="hidden h-5 min-w-5 items-center justify-center rounded-[5px] bg-white/15 px-1 font-sans text-[11px] font-semibold leading-none text-white/85 sm:inline-flex" aria-hidden>
+              ⌥⇧P
             </kbd>
           </button>
         </div>

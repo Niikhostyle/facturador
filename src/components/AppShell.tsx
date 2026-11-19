@@ -113,6 +113,25 @@ export function AppShell({
   const dteRef = useRef<HTMLDivElement>(null);
   const dteBtnRef = useRef<HTMLButtonElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  const [desktop, setDesktop] = useState(true);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const on = () => setDesktop(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+
+  // Foco al abrir/cerrar el menú móvil; no al montar.
+  useEffect(() => {
+    if (open) closeBtnRef.current?.focus();
+    else if (wasOpen.current) menuBtnRef.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
 
   useEffect(() => {
     const a = getAuth();
@@ -160,7 +179,7 @@ export function AppShell({
         }
         if (onboardRes.ok) {
           const body = await onboardRes.json();
-          if (!revoked) setPuedeEmitir(Number(body?.progreso_pct ?? 0) >= 100);
+          if (!revoked) setPuedeEmitir(body?.ambiente === "certificacion" || Number(body?.progreso_pct ?? 0) >= 100);
         }
       } catch {
         /* logo/cert/onboarding opcionales */
@@ -255,7 +274,15 @@ export function AppShell({
         onClick={() => setOpen(false)}
       />
 
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-fiscal focus:shadow-lift"
+      >
+        Saltar al contenido
+      </a>
       <aside
+        inert={!desktop && !open}
+        aria-label="Navegación principal"
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-[272px] flex-col border-r border-white/10 bg-fiscal-deep text-fiscal-on transition-transform lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
@@ -268,7 +295,7 @@ export function AppShell({
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={empresaLogo}
-                alt="Logo"
+                alt=""
                 className="h-9 w-9 rounded-[10px] border border-white/15 bg-white object-contain p-0.5"
               />
             ) : (
@@ -283,8 +310,14 @@ export function AppShell({
               </span>
             </span>
           </Link>
-          <button className="rounded-lg p-2 text-fiscal-muted lg:hidden" onClick={() => setOpen(false)}>
-            <X className="h-5 w-5" />
+          <button
+            ref={closeBtnRef}
+            type="button"
+            aria-label="Cerrar menú"
+            className="rounded-lg p-2 text-fiscal-muted lg:hidden"
+            onClick={() => setOpen(false)}
+          >
+            <X aria-hidden className="h-5 w-5" />
           </button>
         </div>
 
@@ -303,7 +336,7 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="mt-3 flex-1 overflow-y-auto px-3 pb-3">
+        <nav className="nav-scroll mt-3 flex-1 overflow-y-auto overscroll-contain px-3 pb-3">
           {NAV.map((group) => {
             const items = group.items.filter((item) => !item.feature || features.includes(item.feature));
             if (!items.length) return null;
@@ -385,8 +418,11 @@ export function AppShell({
           <div className="flex min-h-16 flex-wrap items-center gap-x-2 gap-y-0 px-4 py-2 sm:gap-x-3 md:px-6 lg:px-8">
             <button
               className="order-1 -ml-2 shrink-0 rounded-[10px] p-2.5 text-[var(--ink-muted)] transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--ink)] lg:hidden"
+              ref={menuBtnRef}
+              type="button"
               onClick={() => setOpen(true)}
               aria-label="Abrir menú"
+              aria-expanded={open}
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -434,8 +470,8 @@ export function AppShell({
             <div className="relative order-6 shrink-0" ref={userRef}>
               <button
                 type="button"
-                aria-haspopup="menu"
                 aria-expanded={menuUser}
+                aria-controls="menu-user"
                 aria-label="Menú de la cuenta"
                 onClick={() => {
                   setMenuUser((v) => !v);
@@ -454,7 +490,7 @@ export function AppShell({
                 />
               </button>
               {menuUser ? (
-                <div className="dte-swap absolute right-0 mt-2 w-56 overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-lift">
+                <div id="menu-user" className="dte-swap absolute right-0 mt-2 w-56 overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-lift">
                   <div className="border-b border-[var(--line)] px-3 py-2.5">
                     <p className="truncate text-sm font-semibold text-ink-900">{auth.user.name}</p>
                     <p className="truncate text-xs text-[var(--ink-muted)]">{auth.user.email}</p>
@@ -586,7 +622,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="px-4 py-4 pb-24 sm:px-6 lg:px-8 lg:py-5 lg:pb-10">{children}</main>
+        <main id="main" tabIndex={-1} className="outline-none px-4 py-4 pb-24 sm:px-6 lg:px-8 lg:py-5 lg:pb-10">{children}</main>
       </div>
 
       <a

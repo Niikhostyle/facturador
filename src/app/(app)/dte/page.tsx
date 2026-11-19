@@ -580,12 +580,13 @@ export default function DtePage() {
                 key={p.key}
                 type="button"
                 onClick={() => applyPreset(p.key)}
+                aria-pressed={preset === p.key}
                 className={cn(
                   "rounded-full px-2.5 py-1 text-xs transition-colors",
                   preset === p.key
                     ? "border border-brand-600/30 bg-brand-50 font-semibold text-brand-700"
                     : p.key === "todo"
-                      ? "text-slate-400 hover:text-slate-600"
+                      ? "text-slate-500 hover:text-slate-700"
                       : "border border-slate-200 text-slate-600 hover:border-brand-600/40 hover:text-brand-700",
                 )}
               >
@@ -652,12 +653,12 @@ export default function DtePage() {
                   }}
                 />
               </div>
-              <p className="col-span-2 text-xs text-slate-400 sm:basis-full">
+              <p className="col-span-2 text-xs text-slate-500 sm:basis-full">
                 Rango inclusivo: {formatFecha(desde)} → {formatFecha(hasta)}.
               </p>
             </div>
           ) : (
-            <p className="mt-2 text-xs text-slate-400">
+            <p className="mt-2 text-xs text-slate-500">
               {formatFecha(desde)} → {formatFecha(hasta)}
               {montoMin || montoMax
                 ? ` · montos ${montoMin || "0"}–${montoMax || "sin tope"}`

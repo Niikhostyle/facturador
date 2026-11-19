@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Save, Star, Trash2, ExternalLink } from "lucide-react";
+import { Save, Star, Trash2, ExternalLink, Download } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { api, getAuth } from "@/lib/api";
 
@@ -47,6 +47,40 @@ export default function EmpresaPage() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoMsg, setLogoMsg] = useState("");
+  const [nomina, setNomina] = useState<{ estado: "idle" | "buscando" | "ok" | "error"; msg: string }>({ estado: "idle", msg: "" });
+
+  // Trae razón social y actividades desde la nómina SII. soloVacios: no pisa lo que el usuario ya escribió.
+  async function traerNomina(base: Empresa, soloVacios: boolean) {
+    const rut = base.rut_formateado.split("-")[0].replace(/\D/g, "");
+    if (!rut) return;
+    setNomina({ estado: "buscando", msg: "Buscando en la nómina del SII…" });
+    try {
+      const n = await api<{ razon_social: string; actividades: { codigo: string; glosa: string }[] }>(
+        `/sii/nomina?rut=${rut}`,
+      );
+      const [principal] = n.actividades;
+      setForm((f) => {
+        if (!f) return f;
+        const put = (actual: string, nuevo?: string) => (nuevo && (!soloVacios || !actual.trim()) ? nuevo : actual);
+        return {
+          ...f,
+          razon_social: put(f.razon_social, n.razon_social),
+          giro: put(f.giro, principal?.glosa),
+          acteco: put(f.acteco, principal?.codigo),
+          giros:
+            soloVacios && f.giros.length
+              ? f.giros
+              : n.actividades.map((a, i) => ({ codigo: a.codigo, glosa: a.glosa, principal: i === 0 })),
+        };
+      });
+      setNomina({
+        estado: "ok",
+        msg: `Datos traídos de la nómina del SII (${n.actividades.length} actividad${n.actividades.length === 1 ? "" : "es"}). Revisa y guarda.`,
+      });
+    } catch (err) {
+      setNomina({ estado: "error", msg: err instanceof Error ? err.message : "No se pudo consultar la nómina del SII." });
+    }
+  }
 
   async function loadLogoPreview(hasLogo: boolean) {
     if (!hasLogo) {
@@ -90,6 +124,7 @@ export default function EmpresaPage() {
         volumen_estimado: e.volumen_estimado ?? "",
       });
       loadLogoPreview(Boolean(e.has_logo));
+      if (!e.razon_social?.trim() || !e.giro?.trim() || !e.acteco?.trim()) traerNomina(e, true);
     });
   }, []);
 
@@ -224,11 +259,31 @@ export default function EmpresaPage() {
           <section className="card p-5">
             <h2 className="font-display text-base font-semibold text-ink-900">Identificación</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm sm:col-span-2">
-                <span className="font-medium text-slate-700">RUT</span>
-                <input className={fieldClass} value={form.rut_formateado} disabled />
+              <div className="block text-sm sm:col-span-2">
+                <label htmlFor="emp-rut" className="font-medium text-slate-700">RUT</label>
+                <div className="flex gap-2">
+                  <input id="emp-rut" className={fieldClass} value={form.rut_formateado} disabled />
+                  <button
+                    type="button"
+                    onClick={() => traerNomina(form, false)}
+                    disabled={nomina.estado === "buscando"}
+                    className="mt-1.5 inline-flex shrink-0 items-center gap-2 rounded-xl border border-brand-300 bg-white px-3 text-sm font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+                  >
+                    <Download className="h-4 w-4" aria-hidden />
+                    Traer datos del SII
+                  </button>
+                </div>
                 <span className="mt-1 block text-xs text-slate-500">El RUT no se puede modificar</span>
-              </label>
+                {nomina.msg ? (
+                  <p
+                    role="status"
+                    className={`mt-1.5 text-xs ${nomina.estado === "error" ? "text-red-700" : nomina.estado === "ok" ? "text-emerald-700" : "text-slate-600"}`}
+                  >
+                    {nomina.msg}
+                    {nomina.estado === "error" ? " Usa «Consultar en el SII» abajo y copia los datos." : ""}
+                  </p>
+                ) : null}
+              </div>
               <label className="block text-sm sm:col-span-2">
                 <span className="font-medium text-slate-700">Razón social</span>
                 <input

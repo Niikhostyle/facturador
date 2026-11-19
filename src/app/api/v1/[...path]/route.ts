@@ -1,4 +1,5 @@
 import fs from "fs";
+import { buscarNomina } from "@/lib/sii/nomina";
 import nodePath from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { parseCaf } from "@/lib/sii/caf";
@@ -612,6 +613,14 @@ async function handleTenant(
     });
   }
   if (path === "empresa" && method === "GET") return json(empresaPayload());
+  // Nómina pública del SII (personas jurídicas): razón social y actividades por RUT.
+  if (path === "sii/nomina" && method === "GET") {
+    const rut = (searchParams.get("rut") || "").replace(/\D/g, "");
+    if (!/^\d{6,8}$/.test(rut)) return json({ message: "RUT inválido.", codigo: "validacion" }, 422);
+    const data = await buscarNomina(Number(rut));
+    if (!data) return json({ message: "RUT no encontrado en la nómina del SII.", codigo: "no_encontrado" }, 404);
+    return json(data);
+  }
   if (path === "empresa" && (method === "PUT" || method === "PATCH" || method === "POST")) {
     const body = await req.json().catch(() => ({}));
     return json(
