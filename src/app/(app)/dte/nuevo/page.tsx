@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { TIPOS_DTE } from "@/lib/seed";
 import { calcularDv, rutValido } from "@/lib/sii/rut";
 import { cn, formatCLP, UNIDADES } from "@/lib/utils";
+import { ivaDe } from "@/lib/iva";
 
 type Cliente = {
   id: number;
@@ -44,6 +45,7 @@ type EmisionResult = {
   totales: { neto: number; exento: number; iva: number; total: number };
   sii: { track_id: string | null; estado: string; glosa: string | null };
   xml_path: string | null;
+  correo?: { enviado: boolean; a?: string; error?: string };
 };
 
 type ItemRow = {
@@ -55,7 +57,21 @@ type ItemRow = {
 };
 
 type CuotaRow = { fecha: string; monto: number; glosa: string };
-type RefRow = { tipo_doc: string; folio: string; fecha: string; razon: string };
+type RefRow = { tipo_doc: string; folio: string; fecha: string; razon: string; codigo_ref?: "" | "1" | "2" | "3" };
+
+// Tipos que el motor emite hoy (las boletas 39/41 van por la API de boletas del SII).
+const TIPOS_EMITIBLES = [33, 34, 39, 41, 61, 56, 52];
+const IND_TRASLADO: [number, string][] = [
+  [1, "Operación constituye venta"],
+  [2, "Ventas por efectuar"],
+  [3, "Consignaciones"],
+  [4, "Entrega gratuita"],
+  [5, "Traslados internos"],
+  [6, "Otros traslados no venta"],
+  [7, "Guía de devolución"],
+  [8, "Traslado para exportación (no venta)"],
+  [9, "Venta para exportación"],
+];
 
 
 const fieldClass =
@@ -77,6 +93,12 @@ function NuevoDteForm() {
 
   const [fecha, setFecha] = useState(hoyIso());
   const [formaPago, setFormaPago] = useState<1 | 2>(1);
+  const [indTraslado, setIndTraslado] = useState(1);
+  const esNota = tipo === 61 || tipo === 56;
+  const esGuia = tipo === 52;
+  const esBoleta = tipo === 39 || tipo === 41;
+  const todoExento = tipo === 34 || tipo === 41;
+  const [casoSet, setCasoSet] = useState("");
 
   const [rutCuerpo, setRutCuerpo] = useState("");
   const [rutDv, setRutDv] = useState("");
@@ -93,7 +115,10 @@ function NuevoDteForm() {
   ]);
   const [impuestoAdicional, setImpuestoAdicional] = useState(false);
   const [cuotas, setCuotas] = useState<CuotaRow[]>([]);
-  const [refs, setRefs] = useState<RefRow[]>([]);
+  // NC/ND: parten con la referencia obligatoria al documento original.
+  const [refs, setRefs] = useState<RefRow[]>(() =>
+    esNota ? [{ tipo_doc: "33", folio: "", fecha: "", razon: "", codigo_ref: "1" }] : [],
+  );
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -172,16 +197,28 @@ function NuevoDteForm() {
   const proximoFolio = cafTipo?.proximo_folio ?? null;
 
   const totals = useMemo(() => {
+    if (esBoleta) {
+      // Boleta: los precios van con IVA; el neto se despeja del total afecto.
+      let afecto = 0;
+      let exento = 0;
+      for (const it of items) {
+        const bruto = Math.round(Number(it.cantidad) * (it.exento || todoExento ? Number(it.precio) : Math.round(Number(it.precio) * 1.19)));
+        if (it.exento || todoExento) exento += bruto;
+        else afecto += bruto;
+      }
+      const netoB = Math.round(afecto / 1.19);
+      return { neto: netoB, exento, iva: afecto - netoB, total: afecto + exento };
+    }
     let neto = 0;
     let exento = 0;
     for (const it of items) {
       const monto = Math.round(Number(it.cantidad) * Number(it.precio));
-      if (it.exento) exento += monto;
+      if (it.exento || todoExento) exento += monto;
       else neto += monto;
     }
-    const iva = Math.round(neto * 0.19);
+    const iva = ivaDe(neto);
     return { neto, exento, iva, total: neto + iva + exento };
-  }, [items]);
+  }, [items, todoExento, esBoleta]);
 
   function applyCliente(c: Cliente) {
     setRutCuerpo(c.rut);
@@ -255,12 +292,44 @@ function NuevoDteForm() {
     try {
       const cuerpo = rutCuerpo.replace(/\D/g, "");
       const dv = rutDv.toUpperCase() || calcularDv(cuerpo);
+      if (esBoleta) {
+        if (cuerpo && !rutValido(`${cuerpo}-${dv}`)) throw new Error("RUT del cliente inválido");
+        if (!items.some((it) => it.nombre.trim() && Number(it.cantidad) > 0 && Number(it.precio) > 0)) throw new Error("Agrega al menos un ítem con precio");
+        if (disponibles <= 0) throw new Error("No hay folios disponibles para boletas. Carga un CAF de boleta.");
+        const resB = await api<EmisionResult>("/dte", {
+          method: "POST",
+          body: JSON.stringify({
+            tipo_dte: tipo,
+            fecha_emision: fecha,
+            transmitir: true,
+            caso_set: casoSet.trim() || undefined,
+            receptor: cuerpo ? { rut: cuerpo, dv, razon_social: razonSocial.trim() || undefined, email: emailPdf.trim() || undefined } : emailPdf.trim() ? { email: emailPdf.trim() } : undefined,
+            items: items
+              .filter((it) => it.nombre.trim())
+              .map((it) => ({
+                nombre: it.nombre.trim(),
+                cantidad: Number(it.cantidad),
+                // la boleta viaja con precio final (IVA incluido)
+                precio: it.exento || todoExento ? Number(it.precio) : Math.round(Number(it.precio) * 1.19),
+                exento: it.exento || todoExento,
+                unidad: it.unidad || undefined,
+              })),
+          }),
+        });
+        setResultado(resB);
+        return;
+      }
       if (!cuerpo || !rutValido(`${cuerpo}-${dv}`)) {
         throw new Error("RUT receptor inválido");
       }
       if (!razonSocial.trim()) throw new Error("Indica la razón social del receptor");
-      if (!items.some((it) => it.nombre.trim() && Number(it.cantidad) > 0 && Number(it.precio) > 0)) {
-        throw new Error("Agrega al menos un ítem con precio");
+      const soloTexto = esNota && refs.some((r) => r.codigo_ref === "2");
+      const sinValor = soloTexto || (esGuia && indTraslado !== 1);
+      if (!items.some((it) => it.nombre.trim() && (sinValor || (Number(it.cantidad) > 0 && Number(it.precio) > 0)))) {
+        throw new Error(sinValor ? "Agrega al menos un ítem" : "Agrega al menos un ítem con precio");
+      }
+      if (esNota && !refs.some((r) => r.tipo_doc && r.folio && r.fecha && r.codigo_ref)) {
+        throw new Error("Completa la referencia al documento original: tipo, folio, fecha y qué hace la nota.");
       }
       if (disponibles <= 0) throw new Error("No hay folios disponibles para este tipo de DTE. Carga un CAF.");
 
@@ -271,6 +340,7 @@ function NuevoDteForm() {
           fecha_emision: fecha,
           transmitir: true,
           forma_pago: formaPago,
+          ind_traslado: esGuia ? indTraslado : undefined,
           receptor: {
             rut: cuerpo,
             dv,
@@ -288,7 +358,7 @@ function NuevoDteForm() {
               nombre: it.nombre.trim(),
               cantidad: Number(it.cantidad),
               precio: Number(it.precio),
-              exento: it.exento,
+              exento: it.exento || todoExento,
               unidad: it.unidad || undefined,
             })),
           cuotas:
@@ -304,6 +374,7 @@ function NuevoDteForm() {
               folio: r.folio,
               fecha: r.fecha || undefined,
               razon: r.razon || undefined,
+              codigo_ref: r.codigo_ref ? Number(r.codigo_ref) : undefined,
             })),
         }),
       });
@@ -365,6 +436,16 @@ function NuevoDteForm() {
                 ? `El SII rechazó el envío${r.sii?.glosa ? " · " + r.sii.glosa : ""}`
                 : `Estado: ${r.sii?.estado ?? "desconocido"}${r.sii?.glosa ? " · " + r.sii.glosa : ""}`}
           </div>
+          {r.correo ? (
+            <p
+              role="status"
+              className={`rounded-[var(--radius-md)] px-4 py-2 text-sm ${r.correo.enviado ? "bg-[var(--ok-soft,#ecfdf5)] text-emerald-800" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
+            >
+              {r.correo.enviado
+                ? `PDF y XML enviados a ${r.correo.a}.`
+                : `El documento se emitió, pero no se pudo enviar a ${r.correo.a}: ${r.correo.error}. Reenvíalo desde el detalle.`}
+            </p>
+          ) : null}
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             <Stat label="Folio" value={`#${r.data.folio}`} />
             <Stat label="Neto" value={formatCLP(r.totales.neto)} />
@@ -397,6 +478,21 @@ function NuevoDteForm() {
     );
   }
 
+  if (!TIPOS_EMITIBLES.includes(tipo)) {
+    return (
+      <AppShell title="Emitir DTE" subtitle={tipoNombre}>
+        <div className="pf-card space-y-3 p-5 text-sm">
+          <p role="status">
+            {`${tipoNombre} todavía no se puede emitir desde aquí.`}
+          </p>
+          <Link href="/dte/nuevo?tipo=33" className="inline-flex rounded-[var(--radius-md)] bg-[var(--pulso)] px-4 py-2 font-semibold text-white">
+            Emitir factura
+          </Link>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell title="Emitir DTE" subtitle="Nuevo documento tributario electrónico">
       <form onSubmit={onSubmit} className="space-y-4">
@@ -414,7 +510,7 @@ function NuevoDteForm() {
                   window.location.href = `/dte/nuevo?tipo=${t}`;
                 }}
               >
-                {TIPOS_DTE.filter((t) => [33, 61, 56, 52, 39, 46].includes(t.codigo)).map((t) => (
+                {TIPOS_DTE.filter((t) => TIPOS_EMITIBLES.includes(t.codigo)).map((t) => (
                   <option key={t.codigo} value={t.codigo}>
                     {t.nombre}
                   </option>
@@ -425,17 +521,35 @@ function NuevoDteForm() {
               <span className="mb-1 block font-medium text-[var(--ink-muted)]">Fecha de emisión</span>
               <input type="date" className={fieldClass} value={fecha} onChange={(e) => setFecha(e.target.value)} required />
             </label>
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-[var(--ink-muted)]">Forma de pago</span>
-              <select
-                className={fieldClass}
-                value={formaPago}
-                onChange={(e) => setFormaPago(Number(e.target.value) === 2 ? 2 : 1)}
-              >
-                <option value={1}>Contado</option>
-                <option value={2}>Crédito</option>
-              </select>
-            </label>
+            {esBoleta ? (
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-[var(--ink-muted)]">Caso del set de pruebas (opcional)</span>
+                <input className={fieldClass} placeholder="CASO-1" value={casoSet} onChange={(e) => setCasoSet(e.target.value)} />
+              </label>
+            ) : esGuia ? (
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-[var(--ink-muted)]">Motivo del traslado</span>
+                <select className={fieldClass} value={indTraslado} onChange={(e) => setIndTraslado(Number(e.target.value))}>
+                  {IND_TRASLADO.map(([v, l]) => (
+                    <option key={v} value={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-[var(--ink-muted)]">Forma de pago</span>
+                <select
+                  className={fieldClass}
+                  value={formaPago}
+                  onChange={(e) => setFormaPago(Number(e.target.value) === 2 ? 2 : 1)}
+                >
+                  <option value={1}>Contado</option>
+                  <option value={2}>Crédito</option>
+                </select>
+              </label>
+            )}
           </div>
           <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warn)_35%,transparent)] bg-[var(--warn-soft)] px-4 py-3 text-sm text-[var(--warn)]">
             {disponibles > 0
@@ -447,7 +561,7 @@ function NuevoDteForm() {
         {/* Receptor */}
         <section className="pf-card space-y-4 p-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 className="font-display text-base font-semibold text-ink-900">Receptor (cliente)</h2>
+            <h2 className="font-display text-base font-semibold text-ink-900">{esBoleta ? "Cliente (opcional)" : "Receptor (cliente)"}</h2>
             {clientes.length > 0 ? (
               <label className="text-sm">
                 <span className="mb-1 block font-medium text-[var(--ink-muted)]">Cargar cliente guardado</span>
@@ -479,7 +593,7 @@ function NuevoDteForm() {
                 onChange={(e) => setRutCuerpo(e.target.value.replace(/\D/g, "").slice(0, 8))}
                 onBlur={onRutBlur}
                 placeholder="76354771"
-                required
+                required={!esBoleta}
               />
             </label>
             <label className="text-sm sm:col-span-1">
@@ -490,7 +604,7 @@ function NuevoDteForm() {
                 onChange={(e) => setRutDv(e.target.value.toUpperCase().replace(/[^0-9K]/g, "").slice(0, 1))}
                 onBlur={onRutBlur}
                 placeholder="K"
-                required
+                required={!esBoleta}
               />
             </label>
             <div className="flex items-end sm:col-span-3">
@@ -509,7 +623,7 @@ function NuevoDteForm() {
                 className={fieldClass}
                 value={razonSocial}
                 onChange={(e) => setRazonSocial(e.target.value)}
-                required
+                required={!esBoleta}
               />
             </label>
           </div>
@@ -695,7 +809,7 @@ function NuevoDteForm() {
         </section>
 
         {/* Cuotas */}
-        <section className="pf-card space-y-3 p-5">
+        <section hidden={esBoleta} className="pf-card space-y-3 p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-base font-semibold text-ink-900">Pago en cuotas (opcional)</h2>
@@ -774,13 +888,22 @@ function NuevoDteForm() {
         </section>
 
         {/* Referencias */}
-        <section className="pf-card space-y-3 p-5">
+        <section hidden={esBoleta} className="pf-card space-y-3 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-display text-base font-semibold text-ink-900">Referencias (opcional)</h2>
+            <h2 className="font-display text-base font-semibold text-ink-900">
+              {esNota ? "Documento que corrige o anula (obligatorio)" : "Referencias (opcional)"}
+            </h2>
             <button
               type="button"
               className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--pulso)]"
-              onClick={() => setRefs((prev) => [...prev, { tipo_doc: "801", folio: "", fecha: hoyIso(), razon: "" }])}
+              onClick={() =>
+                setRefs((prev) => [
+                  ...prev,
+                  esNota
+                    ? { tipo_doc: "33", folio: "", fecha: "", razon: "", codigo_ref: "1" }
+                    : { tipo_doc: "801", folio: "", fecha: hoyIso(), razon: "" },
+                ])
+              }
             >
               <Plus className="h-4 w-4" /> Agregar
             </button>
@@ -793,6 +916,7 @@ function NuevoDteForm() {
                 <div key={idx} className="grid gap-2 sm:grid-cols-12">
                   <input
                     className={cn(fieldClass, "sm:col-span-2")}
+                    aria-label="Tipo de documento referenciado (ej. 33)"
                     placeholder="Tipo"
                     value={r.tipo_doc}
                     onChange={(e) =>
@@ -801,6 +925,7 @@ function NuevoDteForm() {
                   />
                   <input
                     className={cn(fieldClass, "sm:col-span-2")}
+                    aria-label="Folio referenciado"
                     placeholder="Folio"
                     value={r.folio}
                     onChange={(e) =>
@@ -809,14 +934,31 @@ function NuevoDteForm() {
                   />
                   <input
                     type="date"
-                    className={cn(fieldClass, "sm:col-span-3")}
+                    aria-label="Fecha del documento referenciado"
+                    className={cn(fieldClass, "sm:col-span-2")}
                     value={r.fecha}
                     onChange={(e) =>
                       setRefs((prev) => prev.map((row, i) => (i === idx ? { ...row, fecha: e.target.value } : row)))
                     }
                   />
+                  <select
+                    aria-label="Qué hace la referencia"
+                    className={cn(fieldClass, "sm:col-span-2")}
+                    value={r.codigo_ref ?? ""}
+                    onChange={(e) =>
+                      setRefs((prev) =>
+                        prev.map((row, i) => (i === idx ? { ...row, codigo_ref: e.target.value as RefRow["codigo_ref"] } : row)),
+                      )
+                    }
+                  >
+                    <option value="">{esNota ? "Elegir…" : "Solo referencia"}</option>
+                    <option value="1">Anula documento</option>
+                    <option value="2">Corrige texto</option>
+                    <option value="3">Corrige montos</option>
+                  </select>
                   <input
-                    className={cn(fieldClass, "sm:col-span-4")}
+                    className={cn(fieldClass, "sm:col-span-3")}
+                    aria-label="Razón de la referencia"
                     placeholder="Razón"
                     value={r.razon}
                     onChange={(e) =>
@@ -826,6 +968,7 @@ function NuevoDteForm() {
                   <button
                     type="button"
                     className="rounded-lg border border-[var(--line)] p-2 text-[var(--danger)] sm:col-span-1"
+                    aria-label="Quitar referencia"
                     onClick={() => setRefs((prev) => prev.filter((_, i) => i !== idx))}
                   >
                     <Trash2 className="mx-auto h-4 w-4" />

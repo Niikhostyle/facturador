@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { btnDanger, btnPrimary, btnSecondary, card, dialogCls, input } from "@/lib/ui";
 import { calcularDv, formatRutPuntos, partesRut } from "@/lib/sii/rut";
+import { ivaDe } from "@/lib/iva";
 
 type Ejecucion = { periodo: string; estado: "emitida" | "omitida" | "fallida"; at: string; dte_id?: number; folio?: number; error?: string };
 type Programada = {
@@ -222,7 +223,7 @@ export default function ProgramadasPage() {
   const { cuerpo: rutCuerpo, dv: rutDv } = partesRut(form.rut);
   const rutError = form.rut && rutCuerpo.length >= 7 && rutDv && calcularDv(rutCuerpo) !== rutDv ? `Dígito verificador incorrecto: debería ser ${calcularDv(rutCuerpo)}.` : "";
   const netoNum = Math.round(Number(form.neto.replace(/[.$\s]/g, "")) || 0);
-  const ivaForm = form.tipo === "34" ? 0 : Math.round(netoNum * 0.19);
+  const ivaForm = form.tipo === "34" ? 0 : ivaDe(netoNum);
 
   async function guardar(e: FormEvent) {
     e.preventDefault();

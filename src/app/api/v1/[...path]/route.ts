@@ -46,11 +46,15 @@ import {
   turnoEmitido,
 } from "@/lib/store";
 import { guardarDocumentoCotizacion, pdfCotizacion } from "@/lib/cotizacionDoc";
-import { cargarDteDoc, htmlDte, pdfDte, rutaXmlDte } from "@/lib/dteDoc";
+import { cargarDteDoc, enviarDtePorCorreo, htmlDte, pdfDte, rutaXmlDte } from "@/lib/dteDoc";
+import { appUrl, correoValido, enviarCorreo, plantillaCorreo } from "@/lib/mail";
+import { VERSION_LEGAL } from "@/lib/legal";
+import { hashPassword } from "@/lib/password";
+import crypto from "node:crypto";
 import { libroVentas, periodoActualCl, resumenCompras } from "@/lib/contable";
 import { buscarClave, claveSegura, claveUsable, generarClave, MAX_CLAVES_ACTIVAS, PERMISOS, permisoRequerido } from "@/lib/apiKeys";
 import { cafDirAmbiente, ensureCafDirs, getSiiConfig, siiReadiness, type SiiAmbiente } from "@/lib/sii/config";
-import { emitirDteConSii } from "@/lib/sii/emitirStore";
+import { emitirBoletaConSii, emitirDteConSii } from "@/lib/sii/emitirStore";
 import { cifrarClave } from "@/lib/sii/certSecret";
 import {
   authenticateUser,
@@ -62,7 +66,7 @@ import {
   sessionUser,
   verifyToken,
 } from "@/lib/auth";
-import { ensureLoaded, save } from "@/lib/persist";
+import { ConflictoEstado, ensureLoaded, save } from "@/lib/persist";
 import { listPendingFromUser, probeSii } from "@/lib/sii/client";
 import { consultarStc } from "@/lib/sii/stc";
 import type { GiroCliente } from "@/lib/types";
@@ -77,6 +81,7 @@ import {
   adminStats,
   effectiveFeatures,
   getPlatform,
+  findUserByEmail,
   getTenantMeta,
   registerTenant,
   runWithTenant,
@@ -138,6 +143,9 @@ async function handle(req: NextRequest, segments: string[]) {
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
       const plan = String(body.plan || "free");
+      if (body.terminos !== true || body.privacidad !== true || body.encargo !== true) {
+        return json({ message: "Debes aceptar los Términos, la Política de Privacidad y el Acuerdo de Encargo.", codigo: "validacion" }, 422);
+      }
       if (!rut || !dv || !razon || !name || !email || password.length < 8) {
         return json(
           { message: "Completa empresa, nombre, correo y una contraseña de al menos 8 caracteres.", codigo: "validacion" },
@@ -157,6 +165,7 @@ async function handle(req: NextRequest, segments: string[]) {
         password,
         email_contacto: String(body.email_contacto || ""),
         plan,
+        version_legal: VERSION_LEGAL,
       });
       const token = issueToken(user, tenant.id);
       const feats = effectiveFeatures(tenant);
@@ -184,6 +193,48 @@ async function handle(req: NextRequest, segments: string[]) {
     } catch (e) {
       return json({ message: e instanceof Error ? e.message : "No se pudo registrar", codigo: "registro" }, 422);
     }
+  }
+
+  // Recuperar contraseña: respuesta siempre igual (no revela si el correo existe).
+  if (path === "auth/recuperar" && method === "POST") {
+    const body = await req.json().catch(() => ({}));
+    const email = String(body.email || "").trim().toLowerCase();
+    const generico = json({ message: "Si el correo está registrado, te enviamos un enlace para crear una nueva contraseña." });
+    const user = correoValido(email) ? findUserByEmail(email) : undefined;
+    if (!user || !user.activo) return generico;
+    // Un envío por minuto por usuario, para no usar la app como cañón de correos.
+    if (user.reset_enviado && Date.now() - Date.parse(user.reset_enviado) < 60_000) return generico;
+    const token = crypto.randomBytes(32).toString("hex");
+    user.reset_hash = crypto.createHash("sha256").update(token).digest("hex");
+    user.reset_exp = new Date(Date.now() + 60 * 60_000).toISOString();
+    user.reset_enviado = new Date().toISOString();
+    const { html, text } = plantillaCorreo(
+      "Crea una nueva contraseña",
+      [`Hola ${user.name}:`, "Pediste restablecer tu contraseña del facturador. El enlace vale por 1 hora.", "Si no fuiste tú, ignora este correo: tu contraseña actual sigue igual."],
+      { texto: "Crear nueva contraseña", url: `${appUrl()}/restablecer?token=${token}` },
+    );
+    try {
+      await enviarCorreo({ to: user.email, subject: "Restablecer tu contraseña", html, text });
+    } catch (e) {
+      console.error("[mail] recuperar:", e instanceof Error ? e.message : e);
+      return json({ message: "No pudimos enviar el correo. Intenta en unos minutos.", codigo: "correo" }, 503);
+    }
+    return generico;
+  }
+  if (path === "auth/restablecer" && method === "POST") {
+    const body = await req.json().catch(() => ({}));
+    const token = String(body.token || "");
+    const password = String(body.password || "");
+    if (password.length < 8) return json({ message: "La contraseña debe tener al menos 8 caracteres.", codigo: "validacion" }, 422);
+    const hash = /^[a-f0-9]{64}$/.test(token) ? crypto.createHash("sha256").update(token).digest("hex") : "";
+    const user = hash ? getPlatform().users.find((u) => u.reset_hash === hash) : undefined;
+    if (!user || !user.reset_exp || Date.parse(user.reset_exp) < Date.now()) {
+      return json({ message: "El enlace no es válido o ya venció. Pide uno nuevo.", codigo: "token" }, 400);
+    }
+    user.password_hash = hashPassword(password);
+    delete user.reset_hash;
+    delete user.reset_exp;
+    return json({ message: "Listo. Ya puedes iniciar sesión con tu nueva contraseña." });
   }
 
   if (path === "auth/login" && method === "POST") {
@@ -613,6 +664,50 @@ async function handleTenant(
     });
   }
   if (path === "empresa" && method === "GET") return json(empresaPayload());
+  // ── Certificación SII: libros electrónicos e intercambio ──
+  if (path === "certificacion/libro" && method === "POST") {
+    try {
+      const { generarYEnviarLibro } = await import("@/lib/sii/libroStore");
+      return json(await generarYEnviarLibro(await req.json()));
+    } catch (e) {
+      return json({ message: e instanceof Error ? e.message : "No se pudo generar el libro.", codigo: "libro" }, 422);
+    }
+  }
+  if (path === "certificacion/libro" && method === "GET") {
+    const { rutaLibro } = await import("@/lib/sii/libroStore");
+    const op = String(searchParams.get("operacion") || "");
+    const periodo = String(searchParams.get("periodo") || "");
+    if (!["VENTA", "COMPRA", "GUIAS"].includes(op) || !/^\d{4}-\d{2}$/.test(periodo)) return json({ message: "Parámetros inválidos.", codigo: "validacion" }, 422);
+    const archivo = rutaLibro(op, periodo);
+    if (!fs.existsSync(archivo)) return notFound();
+    return new NextResponse(new Uint8Array(fs.readFileSync(archivo)), {
+      headers: { "Content-Type": "application/xml", "Content-Disposition": `attachment; filename="${nodePath.basename(archivo)}"` },
+    });
+  }
+  if (path === "certificacion/intercambio" && method === "POST") {
+    try {
+      const body = await req.json();
+      const xml = String(body.xml || "");
+      if (!xml || xml.length > 5_000_000) return json({ message: "Sube el XML del EnvioDTE recibido (máx. 5 MB).", codigo: "validacion" }, 422);
+      const { leerEnvioDte, generarRecepcionEnvio, generarEnvioRecibos, generarResultadoDte } = await import("@/lib/sii/intercambio");
+      const { cargarCertDesdeEnv } = await import("@/lib/sii/emitir");
+      const cfg = getSiiConfig();
+      const cert = cargarCertDesdeEnv();
+      const env = leerEnvioDte(xml);
+      const emp = getDb().empresa;
+      const r = { rutResponde: cfg.rutEmpresa, contacto: { nombre: emp.razon_social, mail: emp.email || undefined } };
+      const rechazar = body.decision === "rechazar";
+      const glosa = String(body.glosa || "").slice(0, 256) || undefined;
+      const acuse = generarRecepcionEnvio(env, { ...r, nombreArchivo: String(body.nombre_archivo || "envio.xml") }, cert);
+      const resultado = generarResultadoDte(env, r, () => (rechazar ? { estado: 2, glosa } : { estado: 0, glosa }), cert);
+      const recibos = rechazar
+        ? null
+        : generarEnvioRecibos(env, { ...r, recinto: String(body.recinto || emp.direccion || "Oficina central"), rutFirma: cert.rutTitular || cfg.rutCertificado }, cert);
+      return json({ dtes: env.dtes, emisor: env.rutEmisor, acuse, recibos, resultado });
+    } catch (e) {
+      return json({ message: e instanceof Error ? e.message : "No se pudo procesar el envío.", codigo: "intercambio" }, 422);
+    }
+  }
   // Nómina pública del SII (personas jurídicas): razón social y actividades por RUT.
   if (path === "sii/nomina" && method === "GET") {
     const rut = (searchParams.get("rut") || "").replace(/\D/g, "");
@@ -779,11 +874,30 @@ async function handleTenant(
       const { data } = getDte(Number(dteMatch[1]));
       return json({
         data,
-        xml_path: rutaXmlDte(data.tipo_dte, data.folio),
+        xml_path: rutaXmlDte(data),
       });
     } catch {
       return notFound();
     }
+  }
+  const dteEnviarMatch = path.match(/^dte\/(\d+)\/enviar$/);
+  if (dteEnviarMatch && method === "POST") {
+    const body = await req.json().catch(() => ({}));
+    const to = String(body.email || "").trim();
+    if (!correoValido(to)) return json({ message: "Escribe un correo válido.", codigo: "validacion" }, 422);
+    let dte;
+    try {
+      dte = getDte(Number(dteEnviarMatch[1])).data;
+    } catch {
+      return notFound();
+    }
+    try {
+      await enviarDtePorCorreo(dte, to);
+    } catch (e) {
+      console.error("[mail] dte:", e instanceof Error ? e.message : e);
+      return json({ message: "No se pudo enviar el correo. Intenta de nuevo.", codigo: "correo" }, 502);
+    }
+    return json({ message: `Documento enviado a ${to}.` });
   }
   const dteDocMatch = path.match(/^dte\/(\d+)\/documento$/);
   if (dteDocMatch && method === "GET") {
@@ -841,12 +955,28 @@ async function handleTenant(
         }
       }
       // Siempre emisión real con CAF del ambiente (maullin/palena). Sin simulación local.
-      const res = await emitirDteConSii(body);
+      const tipoBody = Number(body?.tipo_dte);
+      const res = tipoBody === 39 || tipoBody === 41 ? await emitirBoletaConSii(body) : await emitirDteConSii(body);
+      // Envío al cliente: si falla el correo, el DTE igual queda emitido.
+      const correoCliente = String(body?.receptor?.email || "").trim();
+      let correo: { enviado: boolean; a?: string; error?: string } | undefined;
+      if (correoCliente) {
+        if (!correoValido(correoCliente)) correo = { enviado: false, a: correoCliente, error: "Correo no válido" };
+        else {
+          try {
+            await enviarDtePorCorreo(res.data, correoCliente);
+            correo = { enviado: true, a: correoCliente };
+          } catch (e) {
+            console.error("[mail] dte:", e instanceof Error ? e.message : e);
+            correo = { enviado: false, a: correoCliente, error: "No se pudo enviar el correo" };
+          }
+        }
+      }
       if (carga?.id && carga.doc_id) {
         registrarResultadoCarga(carga.id, carga.doc_id, { ok: true, dte_id: res.data.id, folio: res.data.folio, sii_estado: res.sii.estado });
       }
       if (turno?.id && turno.periodo) registrarTurno(Number(turno.id), String(turno.periodo), { ok: true, dte_id: res.data.id, folio: res.data.folio });
-      return json(res, 201);
+      return json({ ...res, correo }, 201);
     } catch (e) {
       const message = e instanceof Error ? e.message : "No se pudo emitir";
       if (carga?.id && carga.doc_id) registrarResultadoCarga(carga.id, carga.doc_id, { ok: false, error: message });
@@ -1373,7 +1503,7 @@ type Ctx = { params: Promise<{ path: string[] }> };
 async function run(req: NextRequest, ctx: Ctx) {
   const { path } = await ctx.params;
   const joined = path.join("/");
-  const publicPaths = new Set(["auth/login", "auth/register", "planes"]);
+  const publicPaths = new Set(["auth/login", "auth/register", "auth/recuperar", "auth/restablecer", "planes"]);
   const esClaveApi = req.headers.get("authorization")?.startsWith("Bearer sk_");
   if (!publicPaths.has(joined) && !esClaveApi && !verifyToken(req.headers.get("authorization"))) {
     return json({ message: "Sesión no válida o expirada.", codigo: "no_autenticado" }, 401);
@@ -1393,6 +1523,9 @@ async function run(req: NextRequest, ctx: Ctx) {
       await save();
     } catch (e) {
       console.error("[db] no se pudo guardar:", e instanceof Error ? e.message : e);
+      if (e instanceof ConflictoEstado) {
+        return json({ message: "Los datos cambiaron mientras guardabas. Recarga la página e inténtalo de nuevo.", codigo: "conflicto" }, 409);
+      }
       return json({ message: "No se pudieron guardar los cambios en la base de datos.", codigo: "db" }, 503);
     }
   }

@@ -66,7 +66,7 @@ export async function getSeed() {
 }
 
 /** Firma la semilla (documento getToken) con XML-DSig envolvente (xml-crypto). */
-function signSeedXml(seed: string, certPath: string, password: string) {
+export function signSeedXml(seed: string, certPath: string, password: string) {
   const cert = loadP12FromPath(certPath, password);
   const seedXml = `<getToken><item><Semilla>${seed}</Semilla></item></getToken>`;
   return firmarDocumentoEnvolvente(seedXml, cert);

@@ -72,6 +72,10 @@ export type DteItem = {
   monto_iva?: number;
   estado: string;
   ambiente: Ambiente;
+  /** Guía 52: motivo del traslado (IndTraslado), para el libro de guías. */
+  ind_traslado?: number;
+  /** Track-id del envío al SII (boletas; las facturas lo devuelven en la respuesta). */
+  track_id?: string | null;
 };
 
 /** Factura de compra en el registro del SII (módulo Recibidos). */

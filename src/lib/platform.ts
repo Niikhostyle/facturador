@@ -33,6 +33,12 @@ export type PlatformUser = {
   role: "platform" | "owner" | "admin" | "user";
   activo: boolean;
   created_at: string;
+  /** Recuperar contraseña: sha256 del token enviado por correo, vencimiento y último envío (ISO). */
+  reset_hash?: string;
+  reset_exp?: string;
+  reset_enviado?: string;
+  /** Aceptación de términos, privacidad y encargo al registrarse. */
+  consentimientos?: { version: string; at: string };
 };
 
 export type TenantRecord = Tenant & {
@@ -331,6 +337,7 @@ export function registerTenant(input: {
   password: string;
   email_contacto?: string;
   plan?: string;
+  version_legal?: string;
 }): { tenant: TenantRecord; user: PlatformUser } {
   const p = getPlatform();
   const email = input.email.trim().toLowerCase();
@@ -373,6 +380,7 @@ export function registerTenant(input: {
     role: "owner",
     activo: true,
     created_at: now,
+    ...(input.version_legal ? { consentimientos: { version: input.version_legal, at: now } } : {}),
   };
   p.tenantsMeta.push(tenant);
   p.tenantData[String(tid)] = createEmptyTenantDb(tenant);

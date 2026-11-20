@@ -16,8 +16,21 @@ data/emitidos/
 data/cotizaciones/
 data/logo.*
 data/logos/
+data/nomina-sii/
 tsconfig.tsbuildinfo
 
 # Scripts locales de prueba contra el SII (contienen RUT y datos reales)
 scripts/*
 !scripts/import-nomina-sii.ts
+!scripts/actualizar-nomina-sii.sh
+!scripts/test-persist.ts
+!scripts/test-tipos-dte.ts
+!scripts/test-libro.ts
+!scripts/test-intercambio.ts
+!scripts/respaldo.sh
+!scripts/alertas.ts
+!scripts/tareas-diarias.sh
+!scripts/test-boleta.ts
+data/libros/
+data/alertas-estado.json
+data/.tareas-diarias.lock

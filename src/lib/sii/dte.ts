@@ -2,6 +2,7 @@ import type { CafParsed } from "./caf";
 import { construirTed } from "./ted";
 import { esc, trunc, timestampSii } from "./xmlutil";
 import { rutSii } from "./rut";
+import { TASA_IVA, ivaDe } from "../iva";
 
 /**
  * Armado del <Documento> de un DTE (Factura 33 y afines).
@@ -53,6 +54,23 @@ export type ReferenciaDte = {
   codigoRef?: 1 | 2 | 3; // 1 anula, 2 corrige texto, 3 corrige montos
 };
 
+/** Documentos sin IVA: todos sus ítems son exentos. */
+export const TIPOS_EXENTOS = new Set([34, 41]);
+
+/** Guía de despacho (52): motivo del traslado (catálogo SII IndTraslado). */
+export const IND_TRASLADO = {
+  1: "Operación constituye venta",
+  2: "Ventas por efectuar",
+  3: "Consignaciones",
+  4: "Entrega gratuita",
+  5: "Traslados internos",
+  6: "Otros traslados no venta",
+  7: "Guía de devolución",
+  8: "Traslado para exportación (no venta)",
+  9: "Venta para exportación",
+} as const;
+export type IndTraslado = keyof typeof IND_TRASLADO;
+
 export type DteInput = {
   tipoDte: number;
   folio: number;
@@ -64,6 +82,7 @@ export type DteInput = {
   formaPago?: FormaPago;
   cuotas?: CuotaPago[];
   referencias?: ReferenciaDte[];
+  indTraslado?: IndTraslado; // obligatorio en guía 52
   tstamp?: Date;
 };
 
@@ -75,17 +94,17 @@ export type DteResult = {
   totales: Totales;
 };
 
-const TASA_IVA = 19;
 
-export function calcularTotales(items: Item[]): Totales {
+export function calcularTotales(items: Item[], tipoDte?: number): Totales {
   let neto = 0;
   let exento = 0;
+  const todoExento = tipoDte !== undefined && TIPOS_EXENTOS.has(tipoDte);
   for (const it of items) {
     const monto = Math.round(it.cantidad * it.precio);
-    if (it.exento) exento += monto;
+    if (it.exento || todoExento) exento += monto;
     else neto += monto;
   }
-  const iva = Math.round(neto * (TASA_IVA / 100));
+  const iva = ivaDe(neto);
   return { neto, exento, iva, total: neto + iva + exento };
 }
 
@@ -93,15 +112,18 @@ function detalleXml(items: Item[]): string {
   return items
     .map((it, i) => {
       const monto = Math.round(it.cantidad * it.precio);
+      // Línea sin precio (NC/ND que solo corrige texto): el SII no acepta PrcItem 0, va solo con MontoItem 0.
+      const conPrecio = it.precio > 0;
       return (
         `<Detalle>` +
         `<NroLinDet>${i + 1}</NroLinDet>` +
+        // Orden del XSD: IndExe va antes de NmbItem.
+        (it.exento ? `<IndExe>1</IndExe>` : "") +
         `<NmbItem>${esc(trunc(it.nombre, 80))}</NmbItem>` +
         (it.descripcion ? `<DscItem>${esc(trunc(it.descripcion, 1000))}</DscItem>` : "") +
-        (it.exento ? `<IndExe>1</IndExe>` : "") +
-        `<QtyItem>${it.cantidad}</QtyItem>` +
-        (it.unidad ? `<UnmdItem>${esc(trunc(it.unidad, 4))}</UnmdItem>` : "") +
-        `<PrcItem>${it.precio}</PrcItem>` +
+        (conPrecio ? `<QtyItem>${it.cantidad}</QtyItem>` : "") +
+        (conPrecio && it.unidad ? `<UnmdItem>${esc(trunc(it.unidad, 4))}</UnmdItem>` : "") +
+        (conPrecio ? `<PrcItem>${it.precio}</PrcItem>` : "") +
         `<MontoItem>${monto}</MontoItem>` +
         `</Detalle>`
       );
@@ -143,7 +165,10 @@ function cuotasXml(cuotas: CuotaPago[] | undefined): string {
 }
 
 export function construirDocumento(input: DteInput): DteResult {
-  const totales = calcularTotales(input.items);
+  const items = TIPOS_EXENTOS.has(input.tipoDte) ? input.items.map((it) => ({ ...it, exento: true })) : input.items;
+  input = { ...input, items };
+  const totales = calcularTotales(items, input.tipoDte);
+  const esGuia = input.tipoDte === 52;
   const id = `F${input.folio}T${input.tipoDte}`;
   const rutEmisor = rutSii(input.emisor.rut);
   const rutReceptor = rutSii(input.receptor.rut);
@@ -176,8 +201,8 @@ export function construirDocumento(input: DteInput): DteResult {
     `<TipoDTE>${input.tipoDte}</TipoDTE>` +
     `<Folio>${input.folio}</Folio>` +
     `<FchEmis>${esc(input.fechaEmision)}</FchEmis>` +
-    `<FmaPago>${formaPago}</FmaPago>` +
-    cuotasXml(input.cuotas) +
+    (esGuia ? `<IndTraslado>${input.indTraslado ?? 1}</IndTraslado>` : "") +
+    (esGuia ? "" : `<FmaPago>${formaPago}</FmaPago>` + cuotasXml(input.cuotas)) +
     `</IdDoc>` +
     `<Emisor>` +
     `<RUTEmisor>${esc(rutEmisor)}</RUTEmisor>` +

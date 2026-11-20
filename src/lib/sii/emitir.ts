@@ -4,7 +4,7 @@ import { cafDirAmbiente, ensureCafDirs, getSiiConfig } from "./config";
 import { loadP12FromPath, type CertMaterial } from "./cert";
 import { parseCaf, folioEnRango, type CafParsed } from "./caf";
 import { emitirEnvioCompleto } from "./envio";
-import type { Emisor, Receptor, Item, FormaPago, CuotaPago, ReferenciaDte } from "./dte";
+import type { Emisor, Receptor, Item, FormaPago, CuotaPago, ReferenciaDte, IndTraslado } from "./dte";
 import { getToken } from "./client";
 import { enviarEnvioDte, consultarEstadoEnvio } from "./upload";
 
@@ -65,6 +65,12 @@ export function cargarCafActivo(tipoDte: number): CafParsed {
   throw new Error(`No hay CAF para el tipo ${tipoDte} en ${cfg.ambiente} (${dir}).`);
 }
 
+/** XML emitido: separado por empresa y ambiente (los folios de maullin y palena se repiten). */
+export function rutaXmlEmitido(rutEmisor: string, ambiente: string, tipoDte: number, folio: number): string {
+  const rut = rutEmisor.split("-")[0].replace(/\D/g, "");
+  return path.join(process.cwd(), "data", "emitidos", rut, ambiente, `EnvioDTE_T${tipoDte}_F${folio}.xml`);
+}
+
 export type EmitirInput = {
   tipoDte?: number; // default 33
   folio: number;
@@ -75,6 +81,7 @@ export type EmitirInput = {
   formaPago?: FormaPago;
   cuotas?: CuotaPago[];
   referencias?: ReferenciaDte[];
+  indTraslado?: IndTraslado;
   guardarXml?: boolean; // default true
 };
 
@@ -99,6 +106,7 @@ export function emitirFactura(input: EmitirInput) {
       formaPago: input.formaPago,
       cuotas: input.cuotas,
       referencias: input.referencias,
+      indTraslado: input.indTraslado,
       caf,
     },
     caratula: {
@@ -111,9 +119,8 @@ export function emitirFactura(input: EmitirInput) {
 
   let rutaXml: string | null = null;
   if (input.guardarXml !== false) {
-    const dir = path.join(process.cwd(), "data", "emitidos");
-    fs.mkdirSync(dir, { recursive: true });
-    rutaXml = path.join(dir, `EnvioDTE_T${tipoDte}_F${input.folio}.xml`);
+    rutaXml = rutaXmlEmitido(input.emisor.rut, cfg.ambiente, tipoDte, input.folio);
+    fs.mkdirSync(path.dirname(rutaXml), { recursive: true });
     fs.writeFileSync(rutaXml, out.envioXml, "latin1");
   }
 

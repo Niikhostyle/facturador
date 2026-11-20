@@ -5,7 +5,7 @@ import { firmarElementoPorId } from "./sign";
 import { esc, timestampSii } from "./xmlutil";
 import { rutSii } from "./rut";
 
-const NS_SIIDTE = "http://www.sii.cl/SiiDte";
+export const NS_SIIDTE = "http://www.sii.cl/SiiDte";
 /** RUT del SII como receptor del envío (igual en certificación y producción). */
 export const RUT_SII = "60803000-K";
 
@@ -15,7 +15,7 @@ export const RUT_SII = "60803000-K";
  * para que el digest C14N sea estable al incrustarlo luego en el EnvioDTE.
  */
 /** Inserta saltos de línea entre elementos (el parser del SII los necesita). */
-const sangrar = (xml: string) => xml.replace(/></g, ">\n<");
+export const sangrar = (xml: string) => xml.replace(/></g, ">\n<");
 
 /**
  * Corta el base64 largo en líneas de 64 SOLO en elementos de firma
@@ -24,7 +24,7 @@ const sangrar = (xml: string) => xml.replace(/></g, ">\n<");
  * elementos están en KeyInfo / son el propio valor de firma, fuera de todo
  * SignedInfo, así que cortarlos no rompe ninguna firma. Idempotente.
  */
-function cortarB64Firma(xml: string): string {
+export function cortarB64Firma(xml: string): string {
   return xml.replace(
     /(<(?:X509Certificate|SignatureValue|Modulus)>)([A-Za-z0-9+/=\s]{77,}?)(<\/)/g,
     (_m, open: string, content: string, close: string) => {
@@ -120,7 +120,7 @@ export function generarEnvioDte(
  * y el corte solo afecta SignatureValue/X509Certificate/Modulus — DigestValue es
  * corto y no se toca), así que las firmas siguen válidas.
  */
-function formatearParaSii(xml: string): string {
+export function formatearParaSii(xml: string): string {
   // Salto entre la declaración XML y el root (xml-crypto puede reserializarlos pegados).
   let s = xml.replace(/\?>\s*</, "?>\n<");
   // Corta el base64 de la firma del SetDTE (idempotente sobre las del DTE ya cortadas).

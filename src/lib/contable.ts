@@ -1,8 +1,8 @@
 import type { DteItem, RecibidoItem } from "./types";
+import { IVA } from "./iva";
 
 const EXENTOS = new Set([34, 41]);
 const NO_VENTA = new Set([52]); // guía de despacho: traslado, no venta
-const TASA = 0.19;
 
 export type LineaLibro = {
   tipo_dte: number;
@@ -33,7 +33,7 @@ export function montosDte(d: DteItem) {
     // shortcut: DTE emitidos antes de guardar el desglose; se estima desde el total, exacto solo sin ítems mixtos.
     exento = d.monto_total; neto = 0; iva = 0;
   } else {
-    exento = 0; neto = Math.round(d.monto_total / (1 + TASA)); iva = d.monto_total - neto;
+    exento = 0; neto = Math.round(d.monto_total / (1 + IVA)); iva = d.monto_total - neto;
   }
   const s = d.tipo_dte === 61 ? -1 : 1;
   return { exento: s * exento, neto: s * neto, iva: s * iva, total: s * d.monto_total };

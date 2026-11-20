@@ -52,8 +52,11 @@ export const TIPOS_DTE = [
 /** Catálogo de tipos visibles en CAF; todos parten en 0. */
 export const CAF_TIPOS_BASE = [
   { tipo_dte: 33, tipo_nombre: "Factura Electrónica" },
+  { tipo_dte: 34, tipo_nombre: "Factura No Afecta o Exenta Electrónica" },
   { tipo_dte: 39, tipo_nombre: "Boleta Electrónica" },
+  { tipo_dte: 41, tipo_nombre: "Boleta Exenta Electrónica" },
   { tipo_dte: 46, tipo_nombre: "Factura de Compra Electrónica" },
+  { tipo_dte: 52, tipo_nombre: "Guía de Despacho Electrónica" },
   { tipo_dte: 56, tipo_nombre: "Nota de Débito Electrónica" },
   { tipo_dte: 61, tipo_nombre: "Nota de Crédito Electrónica" },
 ] as const;

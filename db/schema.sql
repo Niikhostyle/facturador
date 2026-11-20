@@ -3,6 +3,7 @@
 CREATE TABLE IF NOT EXISTS app_state (
   id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
   data LONGTEXT NOT NULL,
+  version INT UNSIGNED NOT NULL DEFAULT 0, -- control optimista: evita que un proceso con estado viejo pise al otro
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

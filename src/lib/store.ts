@@ -13,6 +13,7 @@ import {
 } from "./seed";
 import type { ApiKey, Cliente, Cotizacion, CotizacionItem, DteItem, Producto, RecibidoItem, Tenant } from "./types";
 import { logoExiste } from "./logo";
+import { ivaDe } from "./iva";
 
 export type CafTipo = {
   tipo_dte: number;
@@ -194,6 +195,12 @@ export function ensureCafAmbientes(db: Db = getDb()): Db {
     if (!db.cafByAmbiente.certificacion?.length) db.cafByAmbiente.certificacion = emptyCaf();
     if (!db.cafByAmbiente.produccion?.length) db.cafByAmbiente.produccion = emptyCaf();
   }
+  // Empresas creadas antes de sumar tipos al catálogo: agregar las filas que falten.
+  for (const amb of ["certificacion", "produccion"] as const) {
+    const filas = db.cafByAmbiente[amb];
+    for (const base of emptyCaf()) if (!filas.some((t) => t.tipo_dte === base.tipo_dte)) filas.push(base);
+    filas.sort((a, b) => a.tipo_dte - b.tipo_dte);
+  }
   if (!db.nextFolioByAmbiente) {
     db.nextFolioByAmbiente = {
       certificacion: { ...(db.nextFolio || defaultNextFolio()) },
@@ -202,6 +209,9 @@ export function ensureCafAmbientes(db: Db = getDb()): Db {
   } else {
     db.nextFolioByAmbiente.certificacion ??= defaultNextFolio();
     db.nextFolioByAmbiente.produccion ??= defaultNextFolio();
+  }
+  for (const amb of ["certificacion", "produccion"] as const) {
+    for (const [tipo, folio] of Object.entries(defaultNextFolio())) db.nextFolioByAmbiente[amb][Number(tipo)] ??= folio;
   }
   // Mantener aliases hacia el ambiente SII activo (compat).
   const amb: SiiAmbiente = db.siiConfig?.ambiente === "produccion" ? "produccion" : "certificacion";
@@ -513,7 +523,7 @@ export function estadoProgramada(p: Programada, hoy = hoyChile()) {
   let prox = actual < p.desde ? p.desde : diaHoy < p.dia ? actual : sumarMes(actual, 1);
   while (resueltos.has(prox)) prox = sumarMes(prox, 1);
   const proxima = p.encendida ? `${prox}-${String(p.dia).padStart(2, "0")}` : null;
-  const iva = p.tipo_dte === 34 ? 0 : Math.round(p.neto * 0.19);
+  const iva = p.tipo_dte === 34 ? 0 : ivaDe(p.neto);
   const ultima = [...p.ejecuciones].sort((a, b) => b.at.localeCompare(a.at))[0] ?? null;
   return { ...p, pendientes: pendientes.slice(-12), proxima, iva, total: p.neto + iva, ultima };
 }
@@ -878,7 +888,7 @@ export function emitirDte(input: {
   }
 
   const neto = input.items.reduce((acc, it) => acc + it.cantidad * it.precio, 0);
-  const iva = Math.round(neto * 0.19);
+  const iva = ivaDe(neto);
   const total = neto + iva;
   const dte: DteItem = {
     id: db.dtes.length ? Math.max(...db.dtes.map((d) => d.id)) + 1 : 1,
@@ -1028,7 +1038,7 @@ function calcCotizacionTotales(items: CotizacionItem[]) {
     if (it.exento) exento += monto;
     else neto += monto;
   }
-  const iva = Math.round(neto * 0.19);
+  const iva = ivaDe(neto);
   return { neto, exento, iva, total: neto + iva + exento };
 }
 

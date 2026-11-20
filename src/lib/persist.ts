@@ -9,7 +9,12 @@ import { ensureAdminBootstrap, getPlatform, replacePlatform, serializePlatform }
 const g = globalThis as typeof globalThis & {
   __facturadorPool?: mysql.Pool;
   __facturadorLoaded?: Promise<void>;
+  __facturadorVersion?: number;
+  __facturadorSaveChain?: Promise<void>;
 };
+
+/** Otro proceso (script, segundo servidor) guardó antes: este estado en memoria quedó viejo. */
+export class ConflictoEstado extends Error {}
 
 export function pool(): mysql.Pool {
   if (!g.__facturadorPool) {
@@ -36,7 +41,13 @@ async function load(): Promise<void> {
        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   );
-  const [rows] = await p.query<mysql.RowDataPacket[]>("SELECT data FROM app_state WHERE id = 1");
+  try {
+    await p.query("ALTER TABLE app_state ADD COLUMN version INT UNSIGNED NOT NULL DEFAULT 0");
+  } catch (e) {
+    if ((e as { code?: string }).code !== "ER_DUP_FIELDNAME") throw e;
+  }
+  const [rows] = await p.query<mysql.RowDataPacket[]>("SELECT data, version FROM app_state WHERE id = 1");
+  g.__facturadorVersion = rows.length ? Number(rows[0].version) : 0;
   if (rows.length) {
     replacePlatform(JSON.parse(rows[0].data));
   } else {
@@ -56,9 +67,36 @@ export function ensureLoaded(): Promise<void> {
   return g.__facturadorLoaded;
 }
 
-export async function save(): Promise<void> {
-  await pool().query(
-    "INSERT INTO app_state (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)",
-    [JSON.stringify(serializePlatform())],
-  );
+/**
+ * Guarda con control de versión: si otro proceso guardó desde que cargamos, no se pisa su trabajo;
+ * se lanza ConflictoEstado y la próxima petición recarga desde la base.
+ * Los guardados de este proceso van en fila para no chocar entre sí.
+ */
+export function save(): Promise<void> {
+  const run = async () => {
+    const p = pool();
+    const data = JSON.stringify(serializePlatform());
+    const v = g.__facturadorVersion ?? 0;
+    const [res] = await p.query<mysql.ResultSetHeader>(
+      "UPDATE app_state SET data = ?, version = version + 1 WHERE id = 1 AND version = ?",
+      [data, v],
+    );
+    if (res.affectedRows === 1) {
+      g.__facturadorVersion = v + 1;
+      return;
+    }
+    const [ins] = await p.query<mysql.ResultSetHeader>(
+      "INSERT IGNORE INTO app_state (id, data, version) VALUES (1, ?, 1)",
+      [data],
+    );
+    if (ins.affectedRows === 1) {
+      g.__facturadorVersion = 1;
+      return;
+    }
+    g.__facturadorLoaded = undefined; // fuerza recarga del estado bueno
+    throw new ConflictoEstado("El estado cambió en otro proceso; se recargará desde la base.");
+  };
+  const next = (g.__facturadorSaveChain ?? Promise.resolve()).then(run, run);
+  g.__facturadorSaveChain = next.catch(() => {});
+  return next;
 }

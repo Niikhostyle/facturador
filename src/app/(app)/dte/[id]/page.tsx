@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Download, Eye, Printer } from "lucide-react";
+import { Download, Eye, Mail, Printer } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { api, getAuth } from "@/lib/api";
 import { formatCLP } from "@/lib/utils";
@@ -29,6 +29,19 @@ export default function DteDetallePage() {
   const [html, setHtml] = useState("");
   const [error, setError] = useState("");
   const [loadingPdf, setLoadingPdf] = useState(false);
+  const [correo, setCorreo] = useState("");
+  const [envio, setEnvio] = useState<{ estado: "idle" | "enviando" | "ok" | "error"; msg: string }>({ estado: "idle", msg: "" });
+
+  async function enviarCorreo(e: React.FormEvent) {
+    e.preventDefault();
+    setEnvio({ estado: "enviando", msg: "" });
+    try {
+      const r = await api<{ message: string }>(`/dte/${id}/enviar`, { method: "POST", body: JSON.stringify({ email: correo.trim() }) });
+      setEnvio({ estado: "ok", msg: r.message });
+    } catch (err) {
+      setEnvio({ estado: "error", msg: err instanceof Error ? err.message : "No se pudo enviar." });
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -134,7 +147,35 @@ export default function DteDetallePage() {
           <Download className="h-4 w-4" />
           {loadingPdf ? "Generando…" : "Descargar PDF"}
         </button>
+        <form onSubmit={enviarCorreo} className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-none">
+          <label htmlFor="dte-correo" className="sr-only">
+            Correo del cliente
+          </label>
+          <input
+            id="dte-correo"
+            type="email"
+            required
+            autoComplete="email"
+            placeholder="correo@cliente.cl"
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
+            className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm sm:w-56 sm:flex-none"
+          />
+          <button
+            type="submit"
+            disabled={envio.estado === "enviando"}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium disabled:opacity-60"
+          >
+            <Mail className="h-4 w-4" aria-hidden />
+            {envio.estado === "enviando" ? "Enviando…" : "Enviar por correo"}
+          </button>
+        </form>
       </div>
+      {envio.msg ? (
+        <p role="status" className={`mb-4 text-sm ${envio.estado === "ok" ? "text-emerald-700" : "text-red-700"}`}>
+          {envio.msg}
+        </p>
+      ) : null}
 
       <div className="card mb-4 grid gap-3 p-4 text-sm sm:grid-cols-4">
         <div>

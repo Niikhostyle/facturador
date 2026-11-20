@@ -6,10 +6,10 @@
  * cambia la otra.
  */
 import { calcularDv, rutSii, rutValido } from "./sii/rut";
+import { ivaDe } from "./iva";
 
 export const MAX_BYTES = 10 * 1024 * 1024;
 export const MAX_DOCS = 1000;
-export const TASA_IVA = 19;
 
 /** Tipos que el motor de emisión arma hoy. Boletas (39/41) y guías (52) usan otro sobre/servicio del SII. */
 export const TIPOS_PLANILLA: Record<number, string> = {
@@ -180,7 +180,7 @@ export function calcularTotales(items: DocItem[]): Totales {
     if (it.exento) exento += monto;
     else neto += monto;
   }
-  const iva = Math.round(neto * (TASA_IVA / 100));
+  const iva = ivaDe(neto);
   return { neto, exento, iva, total: neto + iva + exento };
 }
 

@@ -263,11 +263,11 @@ export default function RegistroPage() {
             </legend>
             {(
               [
-                ["terminos", "Acepto los Términos y Condiciones"],
-                ["privacidad", "Acepto la Política de Privacidad"],
-                ["encargo", "Acepto el Acuerdo de Encargo de Tratamiento de Datos"],
+                ["terminos", "Acepto los ", "Términos y Condiciones", "/terminos"],
+                ["privacidad", "Acepto la ", "Política de Privacidad", "/privacidad"],
+                ["encargo", "Acepto el ", "Acuerdo de Encargo de Tratamiento de Datos", "/encargo"],
               ] as const
-            ).map(([key, label]) => (
+            ).map(([key, pre, doc, href]) => (
               <label key={key} className="flex items-start gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
@@ -276,7 +276,12 @@ export default function RegistroPage() {
                   onChange={(e) => set(key, e.target.checked)}
                   required
                 />
-                {label}
+                <span>
+                  {pre}
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-700 underline">
+                    {doc}
+                  </a>
+                </span>
               </label>
             ))}
           </fieldset>

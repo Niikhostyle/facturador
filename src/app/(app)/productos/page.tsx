@@ -8,8 +8,8 @@ import { parseCsvProductos, type FilaProducto } from "@/lib/csvProductos";
 import type { Producto } from "@/lib/types";
 import { btnDanger, btnPrimary, btnSecondary, card, dialogCls, input } from "@/lib/ui";
 import { cn, formatCLP, UNIDADES } from "@/lib/utils";
+import { IVA } from "@/lib/iva";
 
-const IVA = 0.19;
 
 const NOMBRE_UNIDAD: Record<string, string> = {
   UN: "Unidad",

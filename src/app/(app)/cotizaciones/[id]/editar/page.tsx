@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { formatCLP } from "@/lib/utils";
 import { formatRutPuntos, partesRut } from "@/lib/sii/rut";
 import type { Cotizacion } from "@/lib/types";
+import { ivaDe } from "@/lib/iva";
 
 type Cliente = {
   id: number;
@@ -92,7 +93,7 @@ export default function EditarCotizacionPage() {
       if (it.exento) exento += monto;
       else neto += monto;
     }
-    const iva = Math.round(neto * 0.19);
+    const iva = ivaDe(neto);
     return { neto, exento, iva, total: neto + iva + exento };
   }, [items]);
 

@@ -59,6 +59,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: "Cumplimiento SII",
     items: [
       { href: "/sii", label: "Conexión SII", icon: Shield },
+      { href: "/certificacion", label: "Certificación SII", icon: ShieldCheck },
       { href: "/caf", label: "CAF / Folios", icon: Receipt },
       { href: "/documentos-autorizados", label: "Documentos autorizados", icon: BadgeCheck },
       { href: "/contable", label: "Contable", icon: BookOpen, feature: "contable" },
@@ -82,6 +83,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
 
 const DTE_TYPES = [
   { tipo: 33, label: "Factura Electrónica" },
+  { tipo: 34, label: "Factura Exenta" },
   { tipo: 39, label: "Boleta Electrónica" },
   { tipo: 61, label: "Nota de Crédito" },
   { tipo: 56, label: "Nota de Débito" },

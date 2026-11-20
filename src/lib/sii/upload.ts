@@ -16,7 +16,7 @@ import { partesRut } from "./rut";
  */
 
 // El DTEUpload del SII exige este patrón de User-Agent o rechaza con un error genérico.
-const USER_AGENT = "Mozilla/4.0 (compatible; PROG 1.0; Facturador DTE)";
+export const USER_AGENT = "Mozilla/4.0 (compatible; PROG 1.0; Facturador DTE)";
 
 function tag(xml: string, name: string): string | null {
   const m = xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
@@ -99,7 +99,7 @@ export async function enviarEnvioDte(opts: {
 }
 
 /** Arma multipart/form-data binario (bytes del archivo sin recodificar). */
-function buildMultipart(
+export function buildMultipart(
   fields: [string, string][],
   file: { name: string; filename: string; contentType: string; data: Buffer },
 ): { boundary: string; buffer: Buffer } {

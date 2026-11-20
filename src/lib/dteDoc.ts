@@ -1,5 +1,4 @@
 import fs from "fs";
-import path from "path";
 import PDFDocument from "pdfkit";
 import bwipjs from "bwip-js/node";
 import type { Ambiente, DteItem } from "./types";
@@ -7,6 +6,7 @@ import { getDb } from "./store";
 import { formatRutPuntos } from "./sii/rut";
 import { aplanarXml } from "./sii/ted";
 import { getSiiConfig } from "./sii/config";
+import { rutaXmlEmitido } from "./sii/emitir";
 import { logoParaDocumentos } from "./logo";
 
 export type DteDocItem = {
@@ -117,9 +117,9 @@ function tipoNombreOf(tipo: number, fallback?: string) {
   return TIPO_NOMBRE[tipo] || fallback || `DTE ${tipo}`;
 }
 
-/** Ruta del EnvioDTE en disco a partir de tipo + folio. */
-export function rutaXmlDte(tipoDte: number, folio: number): string | null {
-  const file = path.join(process.cwd(), "data", "emitidos", `EnvioDTE_T${tipoDte}_F${folio}.xml`);
+/** Ruta del EnvioDTE en disco (empresa activa + ambiente del documento). */
+export function rutaXmlDte(dte: Pick<DteItem, "tipo_dte" | "folio" | "ambiente">): string | null {
+  const file = rutaXmlEmitido(getDb().empresa.rut, dte.ambiente, dte.tipo_dte, dte.folio);
   return fs.existsSync(file) ? file : null;
 }
 
@@ -143,8 +143,8 @@ export function parseEnvioDteXml(xml: string): DteDocParsed {
     fecha: tag(doc, "FchEmis"),
     emisor: {
       rut: tag(doc, "RUTEmisor"),
-      razon: tag(doc, "RznSoc"),
-      giro: tag(doc, "GiroEmis"),
+      razon: tag(doc, "RznSoc") || tag(doc, "RznSocEmisor"),
+      giro: tag(doc, "GiroEmis") || tag(doc, "GiroEmisor"),
       direccion: tag(doc, "DirOrigen"),
       comuna: tag(doc, "CmnaOrigen"),
       ciudad: tag(doc, "CiudadOrigen") || emp.ciudad || tag(doc, "CmnaOrigen"),
@@ -175,7 +175,7 @@ export function parseEnvioDteXml(xml: string): DteDocParsed {
 
 /** Arma datos del documento: XML si existe; si no, desde el registro del store. */
 export function cargarDteDoc(dte: DteItem): DteDocParsed {
-  const xmlPath = rutaXmlDte(dte.tipo_dte, dte.folio);
+  const xmlPath = rutaXmlDte(dte);
   const emp = getDb().empresa;
   if (xmlPath) {
     const xml = fs.readFileSync(xmlPath, "latin1");
@@ -669,5 +669,37 @@ export async function pdfDte(doc: DteDocParsed, meta?: DtePdfMeta): Promise<Buff
     pdf.addPage();
     drawPage(pdf, doc, { ...common, copia: "cedible" });
     pdf.end();
+  });
+}
+
+/** Envía el DTE (PDF + XML) por correo al cliente. */
+export async function enviarDtePorCorreo(dte: DteItem, to: string) {
+  const { enviarCorreo, plantillaCorreo } = await import("./mail");
+  const emp = getDb().empresa;
+  const parsed = cargarDteDoc(dte);
+  const pdf = await pdfDte(parsed, {
+    tipoNombre: dte.tipo_nombre,
+    estado: dte.estado,
+    ambiente: dte.ambiente,
+    trackId: (dte as { track_id?: string | null }).track_id ?? null,
+  });
+  const xmlPath = rutaXmlDte(dte);
+  const nombre = `DTE_T${dte.tipo_dte}_F${dte.folio}`;
+  const prueba = dte.ambiente === "certificacion" ? " (documento de prueba, sin valor tributario)" : "";
+  const { html, text } = plantillaCorreo(`${dte.tipo_nombre} N° ${dte.folio}`, [
+    `${emp.razon_social} te envía su ${dte.tipo_nombre} N° ${dte.folio}${prueba}.`,
+    `Monto total: $${Number(dte.monto_total || 0).toLocaleString("es-CL")}.`,
+    "Adjuntamos el PDF y el XML del documento tributario electrónico.",
+  ]);
+  await enviarCorreo({
+    to,
+    replyTo: emp.email || undefined,
+    subject: `${dte.tipo_nombre} N° ${dte.folio} de ${emp.razon_social}`,
+    html,
+    text,
+    attachments: [
+      { filename: `${nombre}.pdf`, content: pdf, contentType: "application/pdf" },
+      ...(xmlPath ? [{ filename: `${nombre}.xml`, path: xmlPath, contentType: "application/xml" }] : []),
+    ],
   });
 }

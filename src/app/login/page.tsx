@@ -122,12 +122,9 @@ export default function LoginPage() {
             </div>
 
             <div className="flex justify-end">
-              <a
-                href="mailto:nfigueroa@gdtdevsur.cl?subject=Recuperar%20acceso%20Facturador"
-                className="text-sm font-semibold text-brand-600 transition hover:underline"
-              >
+              <Link href="/recuperar" className="text-sm font-semibold text-brand-600 transition hover:underline">
                 ¿Olvidaste tu contraseña?
-              </a>
+              </Link>
             </div>
 
             {error ? (
@@ -153,6 +150,10 @@ export default function LoginPage() {
             <a href="/registro" className="font-semibold text-brand-600 hover:underline">
               Registrar empresa
             </a>
+          </p>
+          <p className="mt-4 text-xs text-slate-500">
+            <a href="/terminos" className="hover:underline">Términos</a> ·{" "}
+            <a href="/privacidad" className="hover:underline">Privacidad</a>
           </p>
           <p className="mt-2 text-sm text-slate-500">
             ¿Problemas para entrar?{" "}
